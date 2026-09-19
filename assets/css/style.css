@@ -1,4 +1,4 @@
-/* ============================================================
+﻿/* ============================================================
  *  style.css —— 组件样式
  *
  *  铁律：本文件禁止出现硬编码色值，一律引用 tokens.css 的变量。
@@ -1806,6 +1806,45 @@ html[data-theme='dark'] {
 }
 /* 排序段靠右，与显示方式分开 */
 .viewmode-bar .seg:last-child { margin-left: auto; }
+
+/* ============================================================
+ *  搜索理解条
+ *
+ *  拼音 / 首字母 / 近义词 / 错字容错都会让"搜到的结果"看起来和输入
+ *  对不上（输入 ymq，标题里却没有 ymq）。这条把它说明白，避免用户
+ *  以为搜索坏了。仅使用设计令牌，跟随主题自动变色。
+ * ============================================================ */
+.search-hint {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-2) var(--sp-3);
+  margin-bottom: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--brand-soft);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+}
+.sh-lead { color: var(--text-primary); }
+.sh-lead b { color: var(--brand); }
+.sh-modes {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.sh-chip {
+  padding: 1px var(--sp-2);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  color: var(--brand);
+  font-weight: var(--fw-semibold);
+  white-space: nowrap;
+}
+.sh-syn { color: var(--text-tertiary); white-space: nowrap; }
 
 /* ============================================================
  *  响应式媒体查询（统一收口）

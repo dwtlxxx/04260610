@@ -12,6 +12,8 @@ import {
   BOARD, BOARDS, BOARD_MAP, BOARD_KINDS, PIN_LEVEL, PIN_LABEL,
   AI_ENTRIES, AI_KIND, USE_AI_MODULE, AI_DISCLAIMER, AI_DISCLAIMER_LONG,
 } from './data.js';
+import { CHAR_PINYIN, CHAR_INITIAL } from './pinyin.js';
+import { termsIn } from './lexicon.js';
 
 /**
  * 是否启用演示数据。
@@ -444,8 +446,10 @@ export function matchesFilters(item, filters, now) {
     if (!ok) return false;
   }
 
-  if (keyword) {
-    // 使用模糊匹配而非简单子串：用户常记不全关键词或顺序记错
+  // 关键词过滤：使用模糊匹配而非简单子串。
+  // 注意先 trim —— 只有空白的输入应视为"未输入"，不能把所有条目都过滤掉，
+  // 否则用户误敲一个空格就会看到空列表。
+  if (keyword && String(keyword).trim()) {
     if (itemFuzzyScore(item, keyword) <= 0) return false;
   }
 
@@ -912,79 +916,273 @@ export function aiOverview(list, now) {
 export { AI_KIND, AI_DISCLAIMER, AI_DISCLAIMER_LONG };
 
 /* ============================================================
- * 模糊搜索
+ * 近义词 / 概念词典
  *
- *  为什么需要：用户常记不全关键词或顺序记错。
- *  例如搜「编程训练」应命中「零基础编程训练营」；
- *  搜「零基础程序」这种跨越词序的输入也应命中。
+ *  把用户的口语化说法映射到材料中的正式表述。例如用户想找运动类
+ *  活动时会搜「运动」，而材料里写的是「周末羽毛球约球」。
  *
- *  打分规则（越高越相关）：
- *    120  完全相同
- *    100  完整子串（命中位置越靠前分越高）
- *     90  前缀匹配
- *     80  词边界匹配（拉丁按词、中文按字边界）
- *     40  子序列匹配（字符按序出现即可，中间可隔字）
- *      0  不匹配
+ *  权重说明见 itemFuzzyScore：近义词命中按 0.72 折算，
+ *  保证"直接命中"永远排在"近义命中"之前。
+ * ============================================================ */
+export const SYNONYMS = {
+  运动: ['羽毛球', '约球', '体育'],
+  体育: ['羽毛球', '约球', '运动'],
+  约球: ['羽毛球', '运动', '组局'],
+  组局: ['约球', '搭子', '组队'],
+  搭子: ['约球', '组局', '交流'],
+  讲座: ['分享会', '公开课', '交流会'],
+  分享会: ['讲座', '交流会', '经验分享'],
+  公开课: ['讲座', '课程', '入门'],
+  比赛: ['竞赛', '挑战赛', '选拔'],
+  竞赛: ['比赛', '挑战赛', '选拔'],
+  培训: ['训练营', '工作坊', '学习小组'],
+  训练: ['训练营', '培训'],
+  工作坊: ['培训', '实操'],
+  招人: ['招募', '招聘', '组队'],
+  招募: ['招人', '招聘', '组队'],
+  招聘: ['招募', '招人'],
+  兼职: ['福利', '日结'],
+  志愿: ['志愿服务', '公益'],
+  公益: ['志愿服务', '志愿'],
+  科研: ['科研助理', '科研入门', '论文'],
+  论文: ['科研', '检索'],
+  导师: ['科研', '导师联系'],
+  资料: ['学习资料', '资料合集', '课程'],
+  课程: ['公开课', '学习资料'],
+  团队: ['组队', '成员', '招募'],
+  组队: ['团队', '招募', '成员'],
+  编程: ['程序', '开发'],
+  程序: ['程序设计', '编程'],
+  开发: ['程序', '前端'],
+  前端: ['开发', 'Web'],
+  安全: ['网络安全', 'CTF'],
+  英语: ['语言角', '外国语'],
+  语言: ['语言角', '外国语'],
+  摄影: ['摄影志愿者', '拍照'],
+  学习: ['学习小组', '自学', '资料'],
+  线上: ['直播', '线上同步'],
+};
+
+/* ============================================================
+ * 智能搜索
+ *
+ *  相比早期的"子串 + 子序列"，这里补齐用户真实会用的三类输入：
+ *   ① 拼音与首字母     lqb / lanqiao / lanqiaobei  → 蓝桥杯
+ *                      ymq                          → 羽毛球
+ *   ② 错字容忍         「兰桥杯」→ 蓝桥杯（同音字）
+ *                      「羽毛球赛」→ 羽毛球（多字）
+ *   ③ 近义词           「运动」→ 羽毛球 / 约球
+ *                      「讲座」→ 分享会 / 公开课
+ *
+ *  ── 设计要点：为什么不再使用"子序列匹配" ──
+ *  早期实现用子序列（字符按序出现即可）来提高召回，但实测它是无关命中的
+ *  主要来源：
+ *    · 「zzz」命中「2—4 人组队…10 月 20 日」——数字被当成拉丁字符逐个对上
+ *    · 「xxx」命中「开发零基础学习小组」
+ *    · 「aa」 命中「费用AA」「AI 应用入门」
+ *  根因是**跨书写体系比较**没有隔离。因此本版改为：
+ *    第一步判定查询是"拉丁"还是"中文"；
+ *    第二步只使用对该类型有效的策略，且逐字段做体系隔离。
+ *  这样从结构上消除误命中，而不是靠调阈值打补丁。
+ *
+ *  打分：
+ *    120 完全相同   100 子串（越靠前越高）   90 前缀
+ *     88 拼音/首字母全等   86 片段级拼音/首字母全等
+ *     84 拼音/首字母前缀   80 词边界前缀
+ *     62 编辑距离 ≤1（错字/多字/漏字）
  * ============================================================ */
 
-/**
- * 子序列匹配：needle 的字符需按序出现，且整体跨度不能过大。
- *
- * 限制跨度很关键：中文标题没有空格，若只判断"是否为子序列"，
- * 「零基础程序」会匹配到很长的文本（如整段原文），甚至誤命中无关条目。
- * 这里要求首尾字符跨度不超过 spanLimit，使结果更接近用户直觉。
- *
- * @returns {number} 命中返回紧凑度分数（1~39），否则 0
- */
-function subsequenceScore(needle, haystack, spanLimit = 12) {
-  if (!needle || !haystack) return 0;
-  let i = 0;
-  let first = -1;
-  let last = -1;
-  for (let j = 0; j < haystack.length && i < needle.length; j++) {
-    if (haystack[j] === needle[i]) {
-      if (first < 0) first = j;
-      last = j;
-      i++;
-    }
-  }
-  if (i !== needle.length) return 0;
-  const span = last - first + 1;
-  if (span > spanLimit) return 0;
-  // 跨度越接近关键词长度越紧凑，得分越高
-  const tightness = needle.length / span;
-  return Math.max(1, Math.round(39 * tightness));
+/** 查询/文本的书写体系判定 */
+const RE_LATIN = /^[a-z0-9]+$/;          // 纯拉丁字母或数字
+const RE_HAN = /[\u4e00-\u9fff]/;        // 含汉字
+const RE_SPLIT = /[\s·,，。、；;:：/|｜\\()（）\[\]【】「」『』“”"'']+/;
+
+/** 按标点/空白切分为片段 */
+function splitSegments(text) {
+  return String(text).split(RE_SPLIT).filter(Boolean);
 }
 
-/** 模糊匹配打分；0 表示不匹配 */
+/** 取片段中的纯汉字部分（拼音比较只对这部分进行，避免中英混合片段噪声） */
+function hanPart(seg) {
+  return String(seg).replace(/[^\u4e00-\u9fff]/g, '');
+}
+
+/**
+ * Levenshtein 编辑距离，带早停。
+ * @returns {number} 超过 limit 时返回 limit+1
+ */
+function editDistance(a, b, limit = 1) {
+  if (a === b) return 0;
+  const la = a.length;
+  const lb = b.length;
+  if (Math.abs(la - lb) > limit) return limit + 1;
+  let prev = Array.from({ length: lb + 1 }, (_, i) => i);
+  for (let i = 1; i <= la; i++) {
+    const cur = [i];
+    let rowMin = i;
+    for (let j = 1; j <= lb; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + cost);
+      if (cur[j] < rowMin) rowMin = cur[j];
+    }
+    if (rowMin > limit) return limit + 1;
+    prev = cur;
+  }
+  return prev[lb];
+}
+
+/** 生成与关键词等长及长 1 的滑动窗口，用于漏字/多字的编辑距离比较 */
+function windowsOf(text, len, max = 12) {
+  const s = String(text);
+  const out = new Set();
+  if (len < 2 || s.length < len) return out;
+  for (const w of [len, len + 1]) {
+    if (w > s.length || w > max) continue;
+    for (let i = 0; i + w <= s.length; i++) out.add(s.slice(i, i + w));
+  }
+  return out;
+}
+
+/** 文本 → 拼音串 */
+export function toPinyin(text) {
+  let out = '';
+  for (const ch of String(text)) out += CHAR_PINYIN.get(ch) || ch;
+  return out;
+}
+
+/** 文本 → 拼音首字母串 */
+export function toInitials(text) {
+  let out = '';
+  for (const ch of String(text)) out += CHAR_INITIAL.get(ch) || ch;
+  return out;
+}
+
+/**
+ * 单个词对单段文本打分。
+ * @returns {number} 0 表示不匹配
+ */
 export function fuzzyScore(keyword, text) {
   if (!keyword || !text) return 0;
   const k = String(keyword).toLowerCase().trim();
   const t = String(text).toLowerCase();
   if (!k) return 0;
+
+  /* ── 第一步：直接文本匹配（两种查询类型都适用）── */
   if (t === k) return 120;
   if (t.startsWith(k)) return 90;
   if (t.includes(k)) return 100 - Math.min(20, t.indexOf(k));
-  // 按标点/空白切段后做前缀匹配（对含空格的拉丁文本有效）
-  const segs = t.split(/[\s·,，。、；;:：/|()（）\[\]【】]+/).filter(Boolean);
+  const segs = splitSegments(t);
   for (const seg of segs) {
+    if (seg === k) return 118;
     if (seg.startsWith(k)) return 80;
   }
-  return subsequenceScore(k, t);
+
+  /* ── 第二步：按查询类型选用兼容策略 ── */
+  const kIsLatin = RE_LATIN.test(k);
+
+  if (kIsLatin) {
+    /* 拉丁查询（拼音 / 首字母）的匹配策略。
+       规则全部来自实测踩坑，改动前请先读 `tools/check-search.mjs` 的 ⑥⑦ 两节。
+
+       ① 只比"纯汉字部分"：「费用AA」的纯汉字部分是「费用」，
+          不会被拼音逻辑当成 aa（字面命中在第一步已经处理）。
+
+       ② 按"词单元"比，而不是按任意窗口比。
+          词单元 = 整段汉字 + 词库切出来的词（lexicon.js）。
+          之前按 2~3 字滑动窗口比首字母，会把「最终作」当成 zzz、
+          「学习小」当成 xxx、「组招」当成 zz —— 长句里任意三连字
+          都可能凑出用户的乱码，噪声无法收敛。切词后这两个例子
+          都不再是"词"，噪声消失，而「羽毛球」仍是词，ymq 照样能搜到。
+
+       ③ 首字母等值要求长度完全一致，前缀要求 ≥4 个字母。
+          2~3 个字母的任意前缀（如「zz」「xxx」）歧义太大；
+          而 lqb / ymq / wlaq / sxjm 这类真缩写要么正好是整词
+          的首字母，要么是整段前缀且长度 ≥4。
+
+       ④ 全拼只做等值 / 前缀，不做子串；另允许 2~4 字的全拼窗口，
+          用来覆盖"整段里的某个词"（如「招募」的 zhaomu）。
+          中文每字一个音节，音节串的中间子串对用户没有意义。
+    */
+    const unitsOf = (seg) => {
+      const han = hanPart(seg);
+      if (han.length < 2) return [];
+      return [han, ...termsIn(han)];
+    };
+
+    for (const seg of segs) {
+      for (const u of unitsOf(seg)) {
+        const py = toPinyin(u);
+        const ini = toInitials(u);
+        // 全拼：等值 / 前缀
+        if (k.length >= 2 && k.length <= py.length) {
+          if (py === k) return 88;
+          if (py.startsWith(k)) return 84;
+        }
+        // 首字母：等值（长度必须一致，避免短词吃长词）
+        if (k.length >= 3 && k.length === u.length && ini === k) return 86;
+        // 首字母：前缀（≥4 个字母才有足够区分度）
+        if (k.length >= 4 && k.length <= ini.length && ini.startsWith(k)) return 82;
+        // 错字容忍（仅长查询启用，短串会噪声）
+        if (k.length >= 5 && py.length >= 3 && editDistance(k, py, 1) <= 1) return 70;
+        if (k.length >= 5 && ini.length >= 5 && editDistance(k, ini, 1) <= 1) return 68;
+      }
+    }
+
+    // 全拼滑动窗口：覆盖整段中间某个词的全拼（首字母不做窗口匹配）
+    for (const seg of segs) {
+      const han = hanPart(seg);
+      if (han.length < 3 || k.length < 2) continue;
+      for (let w = 2; w <= 4; w++) {
+        if (w >= han.length) continue;
+        for (let i = 0; i + w <= han.length; i++) {
+          const py = toPinyin(han.slice(i, i + w));
+          if (k.length > py.length) continue;
+          if (py === k) return 80;
+          if (py.startsWith(k)) return 78;
+        }
+      }
+    }
+
+    // 整串纯拼音（适用于英文标题、网址等纯拉丁字段）
+    if (!RE_HAN.test(t)) {
+      if (editDistance(k, t, 1) <= 1) return 62;
+      if (k.length >= 4 && t.includes(k)) return 60;
+    }
+  } else {
+    /* 中文查询：只在"含汉字"的片段上做编辑距离，
+       避免与纯数字/拉丁片段（如 A402、2—4 人）产生无关匹配。 */
+    if (k.length >= 2) {
+      const cands = new Set([...segs, ...windowsOf(t, k.length)]);
+      for (const cand of cands) {
+        if (cand.length < 2) continue;
+        if (!RE_HAN.test(cand)) continue;        // 必须含汉字
+        if (editDistance(k, cand, 1) <= 1) return 62;
+      }
+    }
+  }
+
+  return 0;
+}
+
+/** 查询扩展：把用户输入拆成词，并为每个词补充近义词 */
+function expandTokens(keyword) {
+  const raw = String(keyword).toLowerCase().trim().split(/\s+/).filter(Boolean);
+  return raw.map((tok) => {
+    const syns = SYNONYMS[tok] || [];
+    return { main: tok, all: [tok, ...syns.map((s) => s.toLowerCase())] };
+  });
 }
 
 /**
- * 对一条信息做模糊搜索，返回最佳分数。
+ * 对一条信息做智能搜索，返回最佳分数。
  *
- * 支持多词：用空格分隔的多个关键词要求**全部命中**（可命中不同字段），
- * 取各自分数的平均值。这样「零基础 程序」这类跨词输入也能搜到
- * 「零基础编程训练营」——单词「零基础程序」并不存在于标题中。
- *
- * 字段按重要性加权：标题 > 标签 > 主办方/地点 > 面向对象 > 备注 > 原文。
+ * 支持多词：各词可命中不同字段，全部命中才算匹配，取平均分。
+ * 近义词按 0.72 折算，保证"直接命中"永远优先于"近义命中"。
+ * 字段权重：标题 > 标签 > 主办方/地点 > 面向对象 > 备注 > 原文。
  */
 export function itemFuzzyScore(item, keyword) {
   if (!keyword) return 0;
-  const tokens = String(keyword).toLowerCase().trim().split(/\s+/).filter(Boolean);
+  const tokens = expandTokens(keyword);
   if (!tokens.length) return 0;
 
   const fields = [
@@ -1002,14 +1200,55 @@ export function itemFuzzyScore(item, keyword) {
     let best = 0;
     for (const [val, weight] of fields) {
       if (!val) continue;
-      const s = fuzzyScore(token, val) * weight;
+      const s = fuzzyScore(token.main, val) * weight;
       if (s > best) best = s;
+      for (const syn of token.all.slice(1)) {
+        const ss = fuzzyScore(syn, val) * weight * 0.72;
+        if (ss > best) best = ss;
+      }
     }
-    // 任一词未命中即整体不匹配
-    if (best <= 0) return 0;
+    if (best <= 0) return 0;          // 任一词未命中即整体不匹配
     sum += best;
   }
   return Math.round(sum / tokens.length);
+}
+
+/** searchExplain 用到的可搜索字段（与 itemFuzzyScore 保持一致） */
+function searchableTexts(item) {
+  return [item.title, (item.tags || []).join(' '), item.org, item.place,
+    item.audience, item.notes, item.raw]
+    .filter(Boolean).map((v) => String(v).toLowerCase());
+}
+
+/**
+ * 搜索可解释性：说明"这次搜索是怎么被理解的"。
+ *
+ * 为什么需要它：拼音 / 首字母 / 近义词 / 错字容错都会让"搜到的结果"
+ * 看起来跟输入对不上（输入 ymq，结果里没有 ymq 这三个字母）。
+ * 不解释，用户只会觉得"搜索实现很奇怪"。
+ *
+ * @param {string} keyword 用户输入
+ * @param {Array} items 本次命中的条目
+ * @returns {{keyword:string,count:number,modes:string[],synonyms:string[]}|null}
+ *          modes 取值：direct（字面命中）/ pinyin（拼音·首字母）/
+ *          synonym（近义词）/ fuzzy（错字容错）
+ */
+export function explainSearch(keyword, items) {
+  const kw = String(keyword || '').trim();
+  if (!kw) return null;
+  const list = items || [];
+  const texts = list.flatMap(searchableTexts);
+  const modes = new Set();
+  const synonyms = new Set();
+
+  for (const tok of expandTokens(kw)) {
+    if (texts.some((t) => t.includes(tok.main))) { modes.add('direct'); continue; }
+    const used = tok.all.slice(1).filter((s) => texts.some((t) => t.includes(s)));
+    if (used.length) { modes.add('synonym'); synonyms.add(`${tok.main}→${used[0]}`); continue; }
+    modes.add(RE_LATIN.test(tok.main) ? 'pinyin' : 'fuzzy');
+  }
+
+  return { keyword: kw, count: list.length, modes: [...modes], synonyms: [...synonyms] };
 }
 
 

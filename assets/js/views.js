@@ -19,7 +19,7 @@ import {
   aiEnabled, aiEntriesOf, aiEntryOf, aiOverview, aiChangeSummaries,
   AI_KIND, AI_DISCLAIMER, AI_DISCLAIMER_LONG,
   relationsOf, hasRelations, diffBetween, RELATION, RELATION_LABEL,
-  risksToAiEntry,
+  risksToAiEntry, explainSearch,
 } from './logic.js';
 import {
   esc, h, ICON, statusBadge, statusClass, credibilityBadge, sourceTag, kindTag,
@@ -64,7 +64,7 @@ function topbar(state, dataset) {
       <div class="search-wrap">
         <span class="icon">${ICON.search}</span>
         <input class="search-input" type="search" id="search-input"
-               placeholder="搜索活动、招募、地点；多个词用空格分隔"
+               placeholder="搜索活动、招募、地点；可用拼音或首字母（如 ymq）"
                value="${esc(keyword)}" aria-label="搜索" autocomplete="off" />
         ${keyword ? h`<button class="search-clear" data-action="clear-search"
             aria-label="清空搜索" title="清空搜索">${ICON.close}</button>` : ''}
@@ -122,23 +122,72 @@ function cardGrid(items, state) {
   return h`<div class="feed-grid" data-feed-grid>${items.map((i) => infoCard(i, state)).join('')}</div>`;
 }
 
+/** 搜索理解方式的文案 */
+const SEARCH_MODE_LABEL = {
+  direct: '字面命中',
+  pinyin: '拼音 / 首字母',
+  synonym: '近义词扩展',
+  fuzzy: '错字容错',
+};
+
+/**
+ * 搜索理解条：告诉用户"这次搜索是怎么被理解的"。
+ *
+ * 用户输入 ymq 却看到「周末羽毛球约球」，如果没有任何说明，
+ * 只会觉得搜索逻辑奇怪。这里把匹配方式显式写出来。
+ * 没有结果时不显示本条，改由空状态给出"已尝试哪些方式"的说明。
+ */
+function searchHintBar(state, items) {
+  const kw = (state.filters && state.filters.keyword || '').trim();
+  if (!kw) return '';
+  const info = explainSearch(kw, items);
+  if (!info || !info.count) return '';
+
+  const chips = info.modes.map((m) =>
+    h`<span class="sh-chip">${esc(SEARCH_MODE_LABEL[m] || m)}</span>`).join('');
+  const syn = info.synonyms.length
+    ? h`<span class="sh-syn">近义词：${esc(info.synonyms.join('、'))}</span>`
+    : '';
+
+  return h`<div class="search-hint">
+    <span class="sh-lead">用「${esc(kw)}」找到 <b>${info.count}</b> 条</span>
+    <span class="sh-modes">理解方式：${chips}</span>
+    ${syn}
+  </div>`;
+}
+
+/** 搜索无结果时的说明文案（给 emptyState 用），没有搜索词时返回 undefined */
+function searchEmptyHint(state) {
+  const kw = (state.filters && state.filters.keyword || '').trim();
+  if (!kw) return undefined;
+  return `没有匹配「${kw}」的信息。已尝试：字面命中 · 拼音/首字母 · 近义词 · 错字容错；可换个说法，或只输一个关键词。`;
+}
+
 /**
  * 信息流内容：电脑端多列卡片（高低落差），手机端单列。
  * 供整页渲染与局部刷新（搜索）共用。
  * 列数由容器宽度决定：≥768px 两列，≥1600px 三列（见 CSS .feed-grid）。
+ *
+ * ⚠ 搜索理解条必须放在本函数内部：
+ *   搜索时 app.js 走 refreshResults()，只替换 .main-col 里的"统计条 + 本函数结果"，
+ *   放在 renderDesktop/renderMobile 里的话，打字时不会更新（等于没做）。
  */
 export function feedSection(state, dataset) {
   const boardId = state.board || BOARD.ALL;
   const items = itemsOfBoard(dataset, boardId);
   const isTimeline = boardId === BOARD.TIMELINE;
+  const hint = searchHintBar(state, items);
 
   if (isTimeline) {
-    return items.length
+    return hint + (items.length
       ? timelineView(state, items)
-      : emptyState(state, { filtered: true, hint: '当前时间线只显示官方信息，可切换为「全部来源」。' });
+      : emptyState(state, {
+        filtered: true,
+        hint: searchEmptyHint(state) || '当前时间线只显示官方信息，可切换为「全部来源」。',
+      }));
   }
-  if (!items.length) return emptyState(state, { filtered: true });
-  return cardGrid(items, state);
+  if (!items.length) return hint + emptyState(state, { filtered: true, hint: searchEmptyHint(state) });
+  return hint + cardGrid(items, state);
 }
 
 function statsBar(s) {
@@ -739,15 +788,13 @@ export function renderMobile(state, dataset) {
   } else if (state.route === 'about') {
     body = aboutPanel(state, dataset);
   } else {
+    /* 手机端信息流与电脑端共用 feedSection：cardGrid 会按 state.device 分成
+       单列/多列，空状态与时间线文案也只有一处，避免两端逻辑漂移。 */
     body = h`
       ${featuredPanel(state, dataset, { compact: true })}
       ${boardPinZone(state, dataset, boardId)}
       ${isTimeline ? '' : boardHeader(boardId, boardItems.length)}
-      ${isTimeline
-        ? (boardItems.length ? timelineView(state, boardItems)
-          : emptyState(state, { filtered: true, hint: '当前时间线只显示官方信息，可切换为「全部来源」。' }))
-        : (boardItems.length ? boardItems.map((i) => infoCard(i, state)).join('')
-          : emptyState(state, { filtered: true }))}`;
+      ${feedSection(state, dataset)}`;
   }
 
   return h`${topbar(state, dataset)}
