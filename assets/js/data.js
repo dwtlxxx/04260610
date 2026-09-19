@@ -331,16 +331,18 @@ export const DATASET_META = {
  */
 export const DEMO_ITEMS = [
   {
+    // 主条目：保存**变更前**的原值（原计划 9/20 起每周六、地点未注明）。
+    // 生效值由补充通知 demo-1b 覆盖 —— 这样关联面板才能展示"改了什么"。
     id: 'demo-1',
-    title: '【示例】零基础编程训练营（首次训练时间地点已变更）',
+    title: '【示例】零基础编程训练营',
     kind: KIND.PROGRAM,
     source: SOURCE.SCHOOL,
     org: '校级',
-    raw: '示例数据：因场地调整，首次训练改为 9 月 21 日 19:30，地点改至实验楼 A402；报名截止时间不变。',
+    raw: '示例数据（原始通知）：9 月 24 日 22:00 报名截止；原计划 9 月 20 日起每周六 19:00 训练；面向全校学生；零基础可参加。',
     deadline: '2026-09-24T22:00',
-    startAt: '2026-09-21T19:30',
+    startAt: '2026-09-20T19:00',
     endAt: null,
-    place: '实验楼 A402',
+    place: null,
     audience: '全校学生',
     capacity: null,
     cost: null,
@@ -350,6 +352,7 @@ export const DEMO_ITEMS = [
     notes: '零基础可参加',
     tags: ['程序设计', '零基础', '每周固定'],
     boards: [BOARD.OFFICIAL, BOARD.CONTEST],
+    seriesId: 'demo-lanqiao',
     pin: {
       level: PIN_LEVEL.FEATURED,
       reason: '首次训练时间与地点已变更，按原通知前往会跑错场地',
@@ -447,5 +450,55 @@ export const DEMO_ITEMS = [
     notes: '仅限大二及以上',
     tags: ['科研', '有门槛', '时间投入高'],
     boards: [BOARD.OFFICIAL, BOARD.RECRUIT],
+  },
+
+  /* ---- 以下两条用于验证「帖子关联系统」---- */
+
+  {
+    // 补充通知：与 demo-1 同属一个系列，并更新了它的时间与地点
+    id: 'demo-1b',
+    title: '【示例】零基础编程训练营 补充通知',
+    kind: KIND.PROGRAM,
+    source: SOURCE.SCHOOL,
+    org: '校级',
+    raw: '示例数据：因场地调整，首次训练改为 9 月 21 日 19:30，地点改至实验楼 A402；已报名同学无需重复提交；报名截止时间不变。',
+    deadline: null,
+    startAt: '2026-09-21T19:30',
+    endAt: null,
+    place: '实验楼 A402',
+    audience: null,
+    capacity: null,
+    cost: null,
+    weeklyHours: null,
+    rolling: false,
+    notes: '因场地调整；已报名同学无需重复提交；报名截止时间不变',
+    tags: ['程序设计', '补充通知'],
+    boards: [BOARD.OFFICIAL, BOARD.CONTEST],
+    seriesId: 'demo-lanqiao',
+    isSupplement: true,
+    supplementOf: 'demo-1',
+  },
+
+  {
+    // 重发版：标题与 demo-3 等价（去掉括号备注后相同），正文已变更
+    id: 'demo-3b',
+    title: '【示例】学科竞赛校内选拔（最新）',
+    kind: KIND.CONTEST,
+    source: SOURCE.SCHOOL,
+    org: '校级',
+    raw: '示例数据（更新版）：报名截止延长至 9 月 23 日 18:00，组队人数调整为 3—5 人，其余不变。',
+    deadline: '2026-09-23T18:00',
+    startAt: null,
+    endAt: null,
+    place: null,
+    audience: null,
+    capacity: 5,
+    cost: null,
+    weeklyHours: null,
+    rolling: false,
+    notes: '报名截止延长至 9 月 23 日 18:00；组队人数调整为 3—5 人',
+    tags: ['竞赛', '需要组队'],
+    boards: [BOARD.OFFICIAL, BOARD.CONTEST],
+    repostOf: 'demo-3',
   },
 ];

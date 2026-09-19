@@ -18,6 +18,7 @@ import {
   itemsOfBoard, featuredPins, boardPins, buildTimeline, isOfficial,
   aiEnabled, aiEntriesOf, aiEntryOf, aiOverview, aiChangeSummaries,
   AI_KIND, AI_DISCLAIMER, AI_DISCLAIMER_LONG,
+  relationsOf, hasRelations, diffBetween, RELATION, RELATION_LABEL,
 } from './logic.js';
 import {
   esc, h, ICON, statusBadge, statusClass, credibilityBadge, sourceTag, kindTag,
@@ -197,6 +198,93 @@ function boardPinZone(state, dataset, boardId) {
         ${item.pinReason ? h`<span class="pin-notice-reason">${esc(item.pinReason)}</span>` : ''}
         <span class="pin-notice-arrow" aria-hidden="true">›</span>
       </div>`).join('')}
+  </section>`;
+}
+
+/* ============================================================
+ * 帖子关联系统 —— 渲染件
+ *
+ * 放在详情弹层顶部。解决的问题：
+ *   题目材料里的补充通知（如"训练营改了时间地点"）此前被合并隐藏，
+ *   用户在帖子里看不到"同一件事还有别的通知"，也无法互相跳转。
+ *   本面板把关联帖子列出来，标注关系，并可点击直接跳转。
+ * ============================================================ */
+
+/** 关系 → 视觉修饰 */
+const REL_META = {
+  [RELATION.SUPERSEDES]: { icon: '↻', cls: 'supersedes', hint: '生效版本以对方为准' },
+  [RELATION.SUPPLEMENT]: { icon: '↳', cls: 'supplement', hint: '本条是对方的补充说明' },
+  [RELATION.CROSS]: { icon: '⇄', cls: 'cross', hint: '两条通知互相引用' },
+  [RELATION.SERIES]: { icon: '≡', cls: 'series', hint: '同一活动系列的相关通知' },
+  [RELATION.MANUAL]: { icon: '↔', cls: 'manual', hint: '内容相关的信息' },
+  [RELATION.REPOST]: { icon: '⟳', cls: 'repost', hint: '同一内容被再次发布，请以最新一条为准' },
+};
+
+/**
+ * 关联帖子面板。
+ * @param {object} item       当前查看的条目（合并后的生效版本）
+ * @param {object[]} all      全量**原始**条目（用于计算关系与变更对照）
+ * @param {object} state      应用状态
+ *
+ * 变更对照刻意使用原始条目：主条目的字段已被补充通知覆盖，
+ * 若拿合并后的值做对比，真正被改掉的字段反而显示不出来。
+ */
+export function relationsPanel(item, all, state) {
+  const rels = relationsOf(item, all);
+  if (!rels.length) return '';
+
+  const rawById = new Map(all.map((i) => [String(i.id), i]));
+  const rawSelf = rawById.get(String(item.id)) || item;
+
+  const rows = rels.map(({ item: other, relation }) => {
+    const meta = REL_META[relation] || REL_META[RELATION.MANUAL];
+
+    // 变更对照：仅"被更新 / 补充"两类关系需要展示
+    let diff = [];
+    if (relation === RELATION.SUPERSEDES) {
+      // 对方是本条的补充通知 → 对比"主条目原值"与"对方的值"
+      const rawOther = rawById.get(String(other.id)) || other;
+      diff = diffBetween(rawSelf, rawOther);
+    } else if (relation === RELATION.SUPPLEMENT) {
+      // 本条是对方的补充通知 → 对比"对方原值"与"本条的值"
+      const rawOther = rawById.get(String(other.id)) || other;
+      diff = diffBetween(rawOther, rawSelf);
+    }
+
+    return h`<div class="rel-item ${esc(meta.cls)}" data-action="open-detail" data-id="${esc(other.id)}"
+        role="button" tabindex="0" title="点击查看这条信息">
+      <div class="rel-head">
+        <span class="rel-icon" aria-hidden="true">${meta.icon}</span>
+        <span class="rel-badge">${esc(RELATION_LABEL[relation] || '相关内容')}</span>
+        ${statusBadge(other)}
+        <span class="rel-arrow" aria-hidden="true">›</span>
+      </div>
+      <div class="rel-title">${esc(other.title)}</div>
+      <div class="rel-meta">
+        ${other.startText ? h`<span>活动 ${esc(other.startText)}</span>` : ''}
+        ${other.deadlineText ? h`<span>截止 ${esc(other.deadlineText)}</span>` : ''}
+        ${other.place ? h`<span>${esc(other.place)}</span>` : ''}
+      </div>
+      ${diff.length ? h`<div class="rel-diff">
+        ${diff.map((d) => h`<div class="rel-diff-row">
+          <span class="rel-diff-field">${esc(d.label)}</span>
+          <span class="rel-diff-from">${esc(d.from)}</span>
+          <span class="rel-diff-arrow" aria-hidden="true">→</span>
+          <span class="rel-diff-to">${esc(d.to)}</span>
+        </div>`).join('')}
+      </div>` : ''}
+      <div class="rel-hint">${esc(meta.hint)}</div>
+    </div>`;
+  }).join('');
+
+  return h`<section class="rel-panel" aria-label="关联信息">
+    <div class="rel-panel-head">
+      <span class="rel-panel-icon" aria-hidden="true">🔗</span>
+      <span class="rel-panel-title">关联信息</span>
+      <span class="rel-panel-count">${rels.length} 条</span>
+    </div>
+    <div class="rel-panel-desc">同一件事的多条通知已在此关联，点击可直接跳转。改动过的字段已标出。</div>
+    ${rows}
   </section>`;
 }
 

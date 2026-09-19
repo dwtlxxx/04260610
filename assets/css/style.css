@@ -1267,6 +1267,103 @@ html[data-theme='dark'] {
 .scope-hint { font-size: var(--fs-xs); color: var(--text-tertiary); margin-left: auto; }
 
 /* ============================================================
+ *  帖子关联系统
+ *
+ *  位于详情弹层顶部，把"同一件事的多条通知"关联起来并支持点击跳转。
+ *  重点：让用户一眼看出"哪条是最新生效版本"与"到底改了什么"。
+ * ============================================================ */
+:root {
+  --rel-accent: #0f766e;
+  --rel-soft: #effaf8;
+  --rel-border: #bfe6e0;
+}
+html[data-theme='dark'] {
+  --rel-accent: #4fd1c5;
+  --rel-soft: #12211f;
+  --rel-border: #24504b;
+}
+
+.rel-panel {
+  border: 1px solid var(--rel-border);
+  border-radius: var(--r-lg);
+  background: var(--rel-soft);
+  padding: var(--sp-3);
+  margin-bottom: var(--sp-4);
+}
+.rel-panel-head { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+.rel-panel-icon { font-size: 14px; }
+.rel-panel-title { font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--rel-accent); }
+.rel-panel-count {
+  margin-left: auto; font-size: var(--fs-xs);
+  padding: 1px 7px; border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--rel-accent) 14%, transparent);
+  color: var(--rel-accent);
+}
+.rel-panel-desc {
+  font-size: var(--fs-xs); color: var(--text-tertiary);
+  line-height: var(--lh-normal); margin-bottom: var(--sp-2);
+}
+
+/* 单条关联 */
+.rel-item {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--rel-accent);
+  border-radius: var(--r-md);
+  padding: var(--sp-2) var(--sp-3);
+  margin-bottom: var(--sp-2);
+  cursor: pointer;
+  transition: box-shadow var(--t-fast), transform var(--t-fast), border-color var(--t-fast);
+}
+.rel-item:last-child { margin-bottom: 0; }
+.rel-item:hover { box-shadow: var(--shadow-md); transform: translateX(2px); }
+.rel-item:focus-visible { outline: 2px solid var(--rel-accent); outline-offset: 2px; }
+
+/* 关系类型 → 强调色："被更新"最需要引起注意，用警示色 */
+.rel-item.supersedes { border-left-color: var(--status-closing); }
+.rel-item.supplement { border-left-color: var(--status-recurring); }
+.rel-item.cross { border-left-color: var(--rel-accent); }
+.rel-item.series { border-left-color: var(--status-closed); }
+.rel-item.repost { border-left-color: var(--status-standby); }
+.rel-item.manual { border-left-color: var(--brand); }
+
+.rel-head { display: flex; align-items: center; gap: 6px; margin-bottom: 5px; flex-wrap: wrap; }
+.rel-icon { font-size: var(--fs-sm); color: var(--text-tertiary); }
+.rel-badge {
+  font-size: 10px; font-weight: var(--fw-semibold);
+  padding: 2px 7px; border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--rel-accent) 12%, transparent);
+  color: var(--rel-accent);
+}
+.rel-item.supersedes .rel-badge { background: var(--status-closing-bg); color: var(--status-closing); }
+.rel-item.supplement .rel-badge { background: var(--status-recurring-bg); color: var(--status-recurring); }
+.rel-item.repost .rel-badge { background: var(--status-standby-bg); color: var(--status-standby); }
+.rel-arrow { margin-left: auto; color: var(--text-tertiary); font-size: var(--fs-md); }
+
+.rel-title {
+  font-size: var(--fs-sm); font-weight: var(--fw-medium);
+  color: var(--text-primary); line-height: var(--lh-tight); margin-bottom: 4px;
+}
+.rel-meta {
+  display: flex; flex-wrap: wrap; gap: var(--sp-3);
+  font-size: var(--fs-xs); color: var(--text-tertiary);
+}
+
+/* 变更对照：直接列出"改了哪个字段、从什么变成什么" */
+.rel-diff {
+  margin-top: 6px;
+  border-top: 1px dashed var(--border);
+  padding-top: 6px;
+  display: flex; flex-direction: column; gap: 3px;
+}
+.rel-diff-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: var(--fs-xs); }
+.rel-diff-field { color: var(--text-tertiary); min-width: 56px; }
+.rel-diff-from { color: var(--text-tertiary); text-decoration: line-through; }
+.rel-diff-arrow { color: var(--rel-accent); font-weight: var(--fw-bold); }
+.rel-diff-to { color: var(--status-closing); font-weight: var(--fw-semibold); }
+.rel-hint { margin-top: 5px; font-size: 10px; color: var(--text-tertiary); }
+
+/* ============================================================
  *  AI 整合模块
  *
  *  要求：层级高、主页与帖子内均可用、电脑端右栏固定常驻、

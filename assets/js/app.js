@@ -13,7 +13,7 @@
 
 import {
   SOURCE, KIND, SOURCE_LABEL, KIND_LABEL, BOARD, BOARDS,
-  buildDataset, visibleItems, smartSort, matchesFilters, summarize,
+  buildDataset, getRawItems, visibleItems, smartSort, matchesFilters, summarize,
   parseTime, formatTime, STATUS, STATUS_LABEL,
   itemsOfBoard, tagCloud, boardsOf,
 } from './logic.js';
@@ -24,7 +24,10 @@ import {
   fieldGrid, riskList, seriesNote, roleNote, completenessMeter, missingLine,
   pulse, flash, fadeInUp, busy, scrollToItem,
 } from './ui.js';
-import { renderMobile, renderDesktop, statsBarHTML, resultsHTML, aiInDetail } from './views.js';
+import {
+  renderMobile, renderDesktop, statsBarHTML, resultsHTML,
+  aiInDetail, relationsPanel,
+} from './views.js';
 
 const MOBILE_MAX = 767;      // <= 767px 视为手机
 const DESKTOP_MIN = 1024;    // >= 1024px 进入桌面布局
@@ -168,11 +171,22 @@ function renderModal() {
     closeModalAnimated();
     return;
   }
-  const dataset = computeDataset();
-  const item = dataset.find((x) => String(x.id) === String(state.modal.id));
+  // 一次算出完整数据集。必须用完整数据集而非筛选后的列表：
+  //   ① 被筛选掉的相关帖子也要出现在关联面板里
+  //   ② 纯补充通知（列表页隐藏）在关联面板中需要展示
+  // rawItems 是【原始未合并】条目：关联面板的"变更对照"必须基于原始值，
+  // 因为主条目的字段已被补充通知覆盖，用合并后的值对比会漏掉真正的变更。
+  // 统一走 getRawItems()，避免数据来源与 buildDataset 不一致。
+  const userItems = store.getUserItems();
+  const allItems = buildDataset(state.now, userItems);
+  const rawItems = getRawItems(userItems);
+  const id = String(state.modal.id);
+  const item = allItems.find((x) => String(x.id) === id);
   if (!item) { state.modal = null; closeModalAnimated(); return; }
 
-  const content = state.modal.type === 'publish' ? publishHTML() : detailHTML(item);
+  const content = state.modal.type === 'publish'
+    ? publishHTML()
+    : detailHTML(item, allItems, rawItems);
   const sameModal = state.modal.type === state._lastModalType
     && String(state.modal.id) === String(state._lastModalId);
   state._lastModalType = state.modal.type;
@@ -225,7 +239,7 @@ function closeModalAnimated() {
  * 弹层内容
  * ============================================================ */
 
-function detailHTML(item) {
+function detailHTML(item, allItems, rawItems) {
   const fav = state.favorites.includes(item.id);
   const mine = item.isUserPost;
   const comments = store.getComments(item.id);
@@ -242,6 +256,9 @@ function detailHTML(item) {
     </div>
 
     <div class="modal-body">
+      <!-- 关联信息：置于顶部，便于在"同一件事的多条通知"之间跳转 -->
+      ${relationsPanel(item, rawItems || allItems || [], state)}
+
       ${seriesNote(item)}
       ${roleNote(item)}
 

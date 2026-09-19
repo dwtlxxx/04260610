@@ -338,5 +338,48 @@ check('展开后渲染 AI 内容', /ai-embed-body/.test(expanded));
 check('AI 内容带生成标注', /ai-mark/.test(expanded));
 
 console.log('');
+console.log('=== 12. 帖子关联系统 ===');
+const logicMod = await import(base + 'logic.js');
+const now12 = new Date('2026-09-19T14:30');
+const rawAll = logicMod.getRawItems();
+
+// 打开主条目：应出现关联面板，并列出补充通知与变更对照
+modalHost.innerHTML = '';
+modalHost._cachedSel = {};
+click(mkCard('demo-1'));
+const relHtml = modalHost.innerHTML;
+check('详情顶部出现关联面板', /rel-panel/.test(relHtml));
+check('关联项被渲染', /rel-item/.test(relHtml));
+check('标注了关系类型', /本条已被它更新|本条是对它的补充/.test(relHtml));
+check('列出了字段变更对照', /rel-diff/.test(relHtml));
+check('变更对照包含活动时间', /活动时间/.test(relHtml));
+check('变更对照包含地点', /地点/.test(relHtml));
+check('关联项可点击（带 data-action）', /data-action="open-detail"/.test(relHtml));
+
+// 点击关联项可跳转到对方帖子
+modalHost._cachedSel = {};
+click(mkCard('demo-1b'));
+const jumped = modalHost.innerHTML;
+check('点击关联可跳转到对方帖子', /补充通知/.test(jumped) && /rel-panel/.test(jumped));
+
+// 无关联的条目不应出现空面板
+modalHost.innerHTML = '';
+modalHost._cachedSel = {};
+click(mkCard('demo-2'));
+check('无关联条目不渲染关联面板', !/rel-panel/.test(modalHost.innerHTML));
+
+// 重发关系识别
+const reposts = logicMod.relationsOf(
+  rawAll.find((x) => x.id === 'demo-3'), rawAll,
+).filter((r) => r.relation === logicMod.RELATION.REPOST);
+check('能识别"同一内容的再次发布"', reposts.length === 1,
+  reposts.length ? `→ #${reposts[0].item.id}` : '');
+
+// 合并语义：主条目生效值应来自补充通知
+const merged = logicMod.buildDataset(now12).find((x) => String(x.id) === 'demo-1');
+check('主条目生效时间已按补充通知覆盖', merged.startAt === '2026-09-21T19:30', `实际 ${merged.startAt}`);
+check('主条目生效地点已按补充通知覆盖', merged.place === '实验楼 A402', `实际 ${merged.place}`);
+
+console.log('');
 console.log(`结论：通过 ${pass} 项，失败 ${fail} 项`);
 process.exit(fail ? 1 : 0);

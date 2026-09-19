@@ -614,8 +614,201 @@ export function buildTimeline(list, now) {
 }
 
 /* ============================================================
- * 标签
+ * 帖子关联系统
+ *
+ * 题目材料里的关联关系有两类，此前的处理方式是"合并后隐藏补充通知"，
+ * 但那样用户看不到"同一件事还有哪些通知"，也无法追溯。
+ * 本模块把它们变成帖子顶部可点击的关联面板。
+ *
+ * 关系类型：
+ *   supplement  本条是对方的补充通知（"本条是对 #N 的补充说明"）
+ *   supersedes  对方是本条的补充通知（"本条已被 #N 补充/更新"）
+ *   cross       双向：对方也有指向本条的关联（互相引用）
+ *   series      同属一个活动系列（如同一训练营的多条通知）
+ *   manual      数据中通过 relatedIds 手动指定的关联
+ *   repost      同一内容被重新发布（标题与来源相同，内容已变更）
  * ============================================================ */
+
+export const RELATION = {
+  SUPPLEMENT: 'supplement',
+  SUPERSEDES: 'supersedes',
+  CROSS: 'cross',
+  SERIES: 'series',
+  MANUAL: 'manual',
+  REPOST: 'repost',
+};
+
+export const RELATION_LABEL = {
+  [RELATION.SUPPLEMENT]: '本条是对它的补充',
+  [RELATION.SUPERSEDES]: '本条已被它更新',
+  [RELATION.CROSS]: '互相引用',
+  [RELATION.SERIES]: '同一活动系列',
+  [RELATION.MANUAL]: '相关内容',
+  [RELATION.REPOST]: '同一内容的再次发布',
+};
+
+/** 该条信息在数据中是否存在关联 */
+export function hasRelations(item) {
+  return !!(item.seriesId || item.supplementOf || item.relatedIds?.length
+    || item.repostOf || item.isSupplement);
+}
+
+/**
+ * 规范化标题：用于识别"同一件事的重发"。
+ * 需处理三类修饰，否则会漏判：
+ *   ① 空白与各类括号（中英混用）
+ *   ② 结尾的"补充通知 / 更新 / 最新"等词
+ *   ③ 括号内的时效性备注，如"（首次训练时间地点已变更）""（最新）"
+ */
+function normalizeTitle(t) {
+  return String(t || '')
+    // 去掉成对括号及其内容（用于剔除"（最新）"这类备注）
+    .replace(/[（(【\[「『][^）)】\]」』]*[）)】\]」』]/g, '')
+    .replace(/[\s【】\[\]（）()「」""'']/g, '')
+    .replace(/(补充通知|补充说明|补充|通知|说明|更新|最新|修订版?)/g, '')
+    .trim();
+}
+
+/** 判断两条信息是否为"同一内容的再次发布"（标题等价但内容不同） */
+function isRepostOf(a, b) {
+  if (String(a.id) === String(b.id)) return false;
+  const ta = normalizeTitle(a.title);
+  const tb = normalizeTitle(b.title);
+  if (!ta || ta !== tb) return false;
+  // 标题相同但正文不同 → 视为重发；正文也相同则交给 series 处理
+  return (a.raw || '') !== (b.raw || '');
+}
+
+/**
+ * 计算与某条信息相关的所有帖子。
+ * 返回 [{ item, relation, direction }]，已去重、已排序。
+ */
+export function relationsOf(item, allItems) {
+  const out = new Map();   // id -> { item, relation }
+  const add = (other, relation) => {
+    if (!other || String(other.id) === String(item.id)) return;
+    const k = String(other.id);
+    // 优先级：supplement/supersedes > cross > series > manual > repost
+    const rank = {
+      [RELATION.SUPERSEDES]: 0, [RELATION.SUPPLEMENT]: 0,
+      [RELATION.CROSS]: 1, [RELATION.SERIES]: 2,
+      [RELATION.MANUAL]: 3, [RELATION.REPOST]: 4,
+    };
+    const prev = out.get(k);
+    if (!prev || rank[relation] < rank[prev.relation]) out.set(k, { item: other, relation });
+  };
+
+  const byId = new Map(allItems.map((i) => [String(i.id), i]));
+
+  // ① 本条是对方的补充通知
+  if (item.supplementOf != null) {
+    const main = byId.get(String(item.supplementOf));
+    if (main) add(main, RELATION.SUPPLEMENT);
+  }
+
+  // ② 对方是本条被更新后的主条目（本条被补充通知更新）
+  if (item.supersededBy != null) {
+    const sup = byId.get(String(item.supersededBy));
+    if (sup) add(sup, RELATION.SUPERSEDES);
+  }
+  // 也支持"本条被某条补充"但数据只写在对方身上
+  for (const other of allItems) {
+    if (other.supplementOf != null && String(other.supplementOf) === String(item.id)) {
+      add(other, RELATION.SUPERSEDES);
+    }
+  }
+
+  // ③ 同系列
+  if (item.seriesId) {
+    for (const other of allItems) {
+      if (other.seriesId === item.seriesId) add(other, RELATION.SERIES);
+    }
+  }
+
+  // ④ 手动指定
+  if (Array.isArray(item.relatedIds)) {
+    for (const id of item.relatedIds) {
+      const other = byId.get(String(id));
+      if (other) add(other, RELATION.MANUAL);
+    }
+  }
+
+  // ⑤ 同一内容的再次发布（标题归一化后相同、正文不同）
+  for (const other of allItems) {
+    if (isRepostOf(item, other)) add(other, RELATION.REPOST);
+  }
+
+  // ⑥ 互相引用 → 升级为 cross
+  for (const [k, v] of out) {
+    const other = v.item;
+    const backRefs = (other.supplementOf != null && String(other.supplementOf) === String(item.id))
+      || (item.supplementOf != null && String(item.supplementOf) === String(other.id))
+      || (other.seriesId && other.seriesId === item.seriesId);
+    if (backRefs && v.relation === RELATION.SERIES) out.set(k, { item: other, relation: RELATION.CROSS });
+  }
+
+  const rank = {
+    [RELATION.SUPERSEDES]: 0, [RELATION.SUPPLEMENT]: 1, [RELATION.CROSS]: 2,
+    [RELATION.SERIES]: 3, [RELATION.MANUAL]: 4, [RELATION.REPOST]: 5,
+  };
+  return [...out.values()].sort((a, b) => (rank[a.relation] ?? 9) - (rank[b.relation] ?? 9));
+}
+
+/** 关联面板是否应该展示 */
+export function shouldShowRelations(item, allItems) {
+  return relationsOf(item, allItems).length > 0;
+}
+
+/**
+ * 比较两条信息，列出**有效变更**。
+ *
+ * 两条重要规则（否则会产出误导性结果）：
+ *   ① 只列出"旧值 → 有值的新值"。若新值为空，说明补充通知只是没有重述
+ *      该字段，并不代表信息被取消，展示成"→ 未注明"会让用户误判。
+ *   ② 参数必须是**未合并的原始条目**。若传合并后的条目（其字段已被补充
+ *      通知覆盖），对比等于和自己比，真正被改掉的字段反而显示不出来。
+ *      调用方应使用 originalOf() 还原原始值后再比较。
+ */
+export function diffBetween(a, b) {
+  if (!a || !b) return [];
+  const FIELDS = [
+    ['startAt', '活动时间', true],
+    ['deadline', '报名截止', true],
+    ['place', '地点', false],
+    ['audience', '面向对象', false],
+    ['capacity', '人数限制', false],
+    ['cost', '费用', false],
+    ['weeklyHours', '每周投入', false],
+  ];
+  const rows = [];
+  for (const [key, label, isTime] of FIELDS) {
+    const av = a[key] ?? null;
+    const bv = b[key] ?? null;
+    if (av === bv) continue;
+    // 规则①：新值为空视为"对方未重述"，不作为变更展示
+    if (bv === null || bv === undefined || bv === '') continue;
+    const fmt = (v) => {
+      if (v === null || v === undefined || v === '') return '未注明';
+      if (isTime) return formatTime(v) || String(v);
+      if (key === 'weeklyHours') return `${v} 小时`;
+      if (key === 'capacity') return `${v} 人`;
+      return String(v);
+    };
+    rows.push({ label, from: fmt(av), to: fmt(bv) });
+  }
+  return rows;
+}
+
+/**
+ * 取原始条目（未合并、未加工）。
+ * 关联面板的"变更对照"依赖它：主条目的字段会被补充通知覆盖，
+ * 必须拿到覆盖前的原值才能算出真实变更。
+ */
+export function getRawItems(extraItems = []) {
+  const base = USE_DEMO_DATA ? [...ITEMS, ...DEMO_ITEMS] : ITEMS;
+  return [...base, ...extraItems];
+}
+
 
 /** 统计列表中出现过的标签及数量，用于标签筛选入口 */
 export function tagCloud(list) {
@@ -753,12 +946,26 @@ export function decorate(item, now) {
   };
 }
 
-/** 全量数据 → 加工后的展示列表 */
+/**
+ * 全量数据 → 加工后的展示列表
+ *
+ * 注意 buildViewList 内部使用浅拷贝，不会污染 data.js 中的原始对象，
+ * 因此 getRawItems() 可以在任意时刻拿到未被合并覆盖的原始条目。
+ */
 export function buildDataset(now, extraItems = []) {
-  const base = USE_DEMO_DATA ? [...ITEMS, ...DEMO_ITEMS] : ITEMS;
-  const all = [...base, ...extraItems];
+  const all = getRawItems(extraItems);
   const view = buildViewList(all);
   return view.map((i) => decorate(i, now));
+}
+
+/**
+ * 取原始条目（未合并、未加工）。
+ * 关联面板的"变更对照"依赖它：主条目的字段会被补充通知覆盖，
+ * 必须拿到覆盖前的原值才能算出真实变更。
+ */
+export function getRawItems(extraItems = []) {
+  const base = USE_DEMO_DATA ? [...ITEMS, ...DEMO_ITEMS] : ITEMS;
+  return [...base, ...extraItems];
 }
 
 export { SOURCE, KIND, SOURCE_LABEL, KIND_LABEL };
@@ -766,3 +973,4 @@ export { SOURCE, KIND, SOURCE_LABEL, KIND_LABEL };
 /* 第四步：把板块 / 置顶相关的常量一并转发给视图层，
    使视图层只需 import 本模块，无需直接依赖 data.js（降低耦合） */
 export { BOARD, BOARDS, BOARD_MAP, BOARD_KINDS, PIN_LEVEL, PIN_LABEL };
+/* RELATION / RELATION_LABEL 已在上方以 export const 定义，无需重复导出 */
