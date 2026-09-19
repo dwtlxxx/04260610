@@ -24,7 +24,7 @@ import {
   fieldGrid, riskList, seriesNote, roleNote, completenessMeter, missingLine,
   pulse, flash, fadeInUp, busy, scrollToItem,
 } from './ui.js';
-import { renderMobile, renderDesktop, statsBarHTML, resultsHTML } from './views.js';
+import { renderMobile, renderDesktop, statsBarHTML, resultsHTML, aiInDetail } from './views.js';
 
 const MOBILE_MAX = 767;      // <= 767px 视为手机
 const DESKTOP_MIN = 1024;    // >= 1024px 进入桌面布局
@@ -429,10 +429,26 @@ function persistUIState() {
   });
 }
 
+/**
+ * 更新状态并重渲染。
+ *
+ * 这里是渲染一致性的关键收口点：
+ *   · render() 只重建主界面，**不处理弹层**
+ *   · 因此只要弹层处于打开状态，任何状态变更都必须同时刷新弹层，
+ *     否则会出现"点了没反应"——例如在详情弹层内展开 AI 面板时，
+ *     状态已更新但弹层内容仍是旧的。
+ *
+ * soft=true 用于只影响弹层的改动（如收藏、留言），跳过主界面重建以保住滚动位置。
+ */
 function setState(patch, { soft = false } = {}) {
   Object.assign(state, patch);
   persistUIState();
-  if (soft) renderModal(); else render();
+  if (soft) {
+    renderModal();
+  } else {
+    render();
+    if (state.modal) renderModal();   // 弹层打开时必须同步刷新，否则内容滞后
+  }
 }
 
 function currentDeviceFromViewport() {

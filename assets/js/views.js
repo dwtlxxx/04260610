@@ -342,8 +342,9 @@ function aiSheet(state, dataset) {
       </div>` : ''}`;
 }
 
-/** 帖子内部的 AI 区块（位于正文之后） */
-function aiInDetail(item, state) {
+/** 帖子内部的 AI 区块（位于正文之后）
+ *  导出原因：详情弹层在 app.js 中渲染，需要跨模块调用本函数。 */
+export function aiInDetail(item, state) {
   const entries = aiEntriesOf(item.id);
   if (!entries.length) return '';
   const open = state.aiPanel === 'detail';

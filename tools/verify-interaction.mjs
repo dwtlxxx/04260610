@@ -150,23 +150,30 @@ const logic = await import(base + 'logic.js');
 const appEl = registry.app;
 const modalHost = registry['modal-host'];
 
-/** 取出绑定的处理器并模拟点击 */
+/**
+ * 模拟点击。
+ *
+ * 桩与真实 DOM 的两处关键差异必须显式处理，否则会产生假失败：
+ *   ① closest('input,button,...')：真实 DOM 中卡片是 div 容器、按钮是内部子元素；
+ *      桩无法表达父子关系，因此按标签名区分——button 视为"卡片内的嵌套动作"。
+ *   ② modalHost.querySelector('.modal-mask') 与 e.target 的关系：
+ *      真实 DOM 中弹层内部点击时二者不相等（不应触发"点遮罩关闭"）；
+ *      桩里让 querySelector 返回独立对象即可保证语义一致。
+ */
 function click(el, { onApp = true } = {}) {
   const target = onApp ? appEl : modalHost;
   const fns = target._listeners?.click || [];
-  const ev = {
-    target: el,
-    stopPropagation() {},
-    preventDefault() {},
-  };
-  // closest 返回带 data-action 的元素本身
+  const INTERACTIVE = new Set(['INPUT', 'BUTTON', 'SELECT', 'TEXTAREA', 'A']);
   el.closest = (sel) => {
     if (sel.startsWith('[data-action')) return el.dataset.action ? el : null;
-    if (sel === 'input,button,select,textarea,a') return el;
+    if (sel === 'input,button,select,textarea,a') return INTERACTIVE.has(el.tagName) ? el : null;
     if (sel === '.modal') return null;
     return null;
   };
-  el.classList.contains = (c) => c === 'modal-mask' && el.dataset.action === 'close-modal';
+  // 确保 querySelector('.modal-mask') 不会返回 el 自身
+  modalHost._mask = modalHost._mask || new El('div');
+  modalHost._mask.dataset.role = 'mask';
+  const ev = { target: el, stopPropagation() {}, preventDefault() {} };
   fns.forEach((f) => f(ev));
 }
 
@@ -176,6 +183,19 @@ function mkBtn(action, id) {
   b.dataset.action = action;
   if (id !== undefined) b.dataset.id = String(id);
   return b;
+}
+
+/**
+ * 构造一个"卡片/表格行"（真实场景中它们是 div，不是 button）。
+ * 这点很关键：open-detail 处理器用 closest('input,button,...') 判断
+ * 点击是否落在卡片内的嵌套按钮上；若桩元素自身是 button，
+ * 会被误判为嵌套按钮而提前返回，导致测试假失败。
+ */
+function mkCard(id) {
+  const d = new El('div');
+  d.dataset.action = 'open-detail';
+  d.dataset.id = String(id);
+  return d;
 }
 
 let pass = 0, fail = 0;
@@ -275,6 +295,47 @@ const beforeClose = mask.animations.length;
 click(mkBtn('close-modal'), { onApp: false });
 check('关闭弹层先播放退场动画', mask.classList.contains('is-closing') || mask.animations.length > beforeClose,
   `(is-closing=${mask.classList.contains('is-closing')})`);
+
+console.log('');
+console.log('=== 11. 打开详情弹层（此前 ReferenceError 就在这条路径上）===');
+// 先恢复筛选：第 9 项把板块切成了「官方」，而 demo-2 / demo-4 属于学生自发，
+// 不在筛选结果内会导致"弹层找不到条目"而无法打开——那是数据被筛掉，不是 bug。
+click(mkBtn('board', 'all'));
+let opened = 0, openFailed = [];
+for (const id of ['demo-1', 'demo-2', 'demo-3', 'demo-4', 'demo-5']) {
+  try {
+    modalHost.innerHTML = '';
+    modalHost._cachedSel = {};
+    click(mkCard(id));                     // 卡片用 div，模拟真实结构
+    const html = modalHost.innerHTML;
+    if (html.length > 300) opened++;
+    else openFailed.push(`${id}(过短 ${html.length})`);
+  } catch (err) {
+    openFailed.push(`${id}(${err.message})`);
+  }
+}
+check('五条信息均能打开详情弹层', opened === 5 && openFailed.length === 0,
+  `成功 ${opened}/5${openFailed.length ? ' 失败: ' + openFailed.join(', ') : ''}`);
+
+// 含 AI 条目的详情：
+// 注意 AI 模块按设计默认折叠（"非主动点击不触发"），
+// 因此未展开时只有折叠入口，展开后才渲染内容。
+modalHost.innerHTML = '';
+modalHost._cachedSel = {};
+click(mkCard('demo-1'));
+const collapsed = modalHost.innerHTML;
+check('详情内 AI 折叠入口已渲染', /ai-embed/.test(collapsed) && /ai-embed-head/.test(collapsed));
+check('折叠态下不渲染 AI 内容（非主动点击不触发）', !/ai-embed-body/.test(collapsed));
+
+// 展开 AI 区块。注意 ai-toggle 是"开关"：点一次展开、再点一次折叠，
+// 因此这里只能点一次，否则会折叠回去导致断言失败。
+const toggle = mkBtn('ai-toggle');
+toggle.dataset.panel = 'detail';
+modalHost._cachedSel = {};
+click(toggle, { onApp: false });
+const expanded = modalHost.innerHTML;
+check('展开后渲染 AI 内容', /ai-embed-body/.test(expanded));
+check('AI 内容带生成标注', /ai-mark/.test(expanded));
 
 console.log('');
 console.log(`结论：通过 ${pass} 项，失败 ${fail} 项`);
