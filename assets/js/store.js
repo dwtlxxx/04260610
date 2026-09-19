@@ -183,6 +183,7 @@ export function addComment(itemId, text) {
 const KEY_THEME = 'theme';       // 'auto' | 'light' | 'dark'
 const KEY_VIEWMODE = 'viewmode'; // 'auto' | 'mobile' | 'desktop'
 const KEY_FILTERS = 'filters';
+const KEY_UI_PREFS = 'ui-prefs'; // 板块 / 快捷筛选 / 标签 / 排序
 
 export function getTheme() {
   return read(KEY_THEME, 'auto');
@@ -203,6 +204,14 @@ export function getFilters() {
 }
 export function setFilters(f) {
   write(KEY_FILTERS, f);
+}
+
+/** 界面偏好（当前板块、快捷筛选、激活标签、排序方式） */
+export function getUiPrefs() {
+  return read(KEY_UI_PREFS, {});
+}
+export function setUiPrefs(p) {
+  write(KEY_UI_PREFS, p);
 }
 
 /* ============================================================

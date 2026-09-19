@@ -525,17 +525,30 @@ export function pinsOf(list, level, now) {
   return list.filter((i) => isPinActive(i, now) && i.pin && (!level || i.pin.level === level));
 }
 
-/** 主区域置顶（featured + notice），按级别排序 */
+/**
+ * 主区域置顶：只包含「全站置顶(featured)」与「更新提醒(notice)」。
+ *
+ * 注意：板块置顶(board) 不属于主区域——它只在对应板块内显示。
+ * 早期版本未做过滤，导致板块置顶的信息错误地出现在主区域置顶栏。
+ */
 export function featuredPins(list, now) {
-  const order = { [PIN_LEVEL.FEATURED]: 0, [PIN_LEVEL.NOTICE]: 1, [PIN_LEVEL.BOARD]: 2 };
+  const order = { [PIN_LEVEL.FEATURED]: 0, [PIN_LEVEL.NOTICE]: 1 };
   return list
-    .filter((i) => isPinActive(i, now) && i.pin)
+    .filter((i) => isPinActive(i, now) && i.pin
+      && (i.pin.level === PIN_LEVEL.FEATURED || i.pin.level === PIN_LEVEL.NOTICE))
     .sort((a, b) => (order[a.pin.level] ?? 9) - (order[b.pin.level] ?? 9));
 }
 
-/** 某板块内的置顶条目 */
+/**
+ * 某板块的置顶条目。
+ *
+ * 只返回「板块置顶(board)」层级：全站置顶(featured) 与 更新提醒(notice)
+ * 已经在主区域置顶栏展示过，若再进入板块置顶区会造成同一条信息重复出现。
+ */
 export function boardPins(list, boardId, now) {
-  return itemsOfBoard(list, boardId).filter((i) => isPinActive(i, now) && i.pin);
+  return itemsOfBoard(list, boardId).filter((i) => isPinActive(i, now)
+    && i.pin
+    && i.pin.level === PIN_LEVEL.BOARD);
 }
 
 /* ============================================================

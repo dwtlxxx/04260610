@@ -778,17 +778,23 @@ a:hover { text-decoration: underline; }
 
 /* ============================================================
  *  提示条
+ *
+ *  定位偏移用 CSS 变量 --toast-bottom 控制，
+ *  由 .app[data-device] 决定（手机端要让开底部导航）。
+ *  ⚠ 早期版本用了 body:has(.app[data-device=...]) 选择器，
+ *    在部分浏览器不受支持且特异性不可靠，已改为变量方案。
  * ============================================================ */
+.app { --toast-bottom: calc(var(--bottomnav-h) + 24px + env(safe-area-inset-bottom, 0px)); }
+.app[data-device='desktop'] { --toast-bottom: 40px; }
+
 .toast-host {
-  position: fixed; left: 50%; bottom: calc(var(--bottomnav-h) + 24px);
+  position: fixed; left: 50%; bottom: var(--toast-bottom, 40px);
   transform: translateX(-50%);
   z-index: 200;
   pointer-events: none;
   opacity: 0;
   transition: opacity var(--t-base), transform var(--t-base);
 }
-.app[data-device='desktop'] ~ .toast-host,
-body:has(.app[data-device='desktop']) .toast-host { bottom: 40px; }
 .toast-host.show { opacity: 1; }
 .toast {
   padding: 10px var(--sp-4);
@@ -920,7 +926,7 @@ html[data-theme='dark'] {
 .board-circle.is-timeline.is-active .board-circle-icon {
   background: var(--status-replay-bg); border-color: var(--status-replay); color: var(--status-replay);
 }
-.board-circle-label { font-size: var(--fs-xs); white-space: nowrap; }
+.board-circle-label { font-size: var(--fs-xs); line-height: 1.2; white-space: nowrap; }
 .board-circle.is-active .board-circle-label { color: var(--brand); font-weight: var(--fw-medium); }
 .board-circle-count {
   position: absolute; top: -2px; right: 8px;
@@ -954,8 +960,8 @@ html[data-theme='dark'] {
 .tool-item.is-active { background: var(--brand-soft); color: var(--brand); }
 .tool-item.is-active .tool-label { font-weight: var(--fw-semibold); }
 .tool-icon { font-size: 19px; line-height: 1; }
-.tool-label { font-size: var(--fs-xs); white-space: nowrap; }
-.tool-hint { font-size: 9px; color: var(--text-tertiary); white-space: nowrap; }
+.tool-label { font-size: var(--fs-xs); line-height: 1.2; white-space: nowrap; }
+.tool-hint { font-size: 9px; line-height: 1.2; color: var(--text-tertiary); white-space: nowrap; }
 .tool-item.is-active .tool-hint { color: var(--brand); opacity: .8; }
 
 /* ============================================================
@@ -1188,6 +1194,23 @@ html[data-theme='dark'] {
   .fab { width: 56px; height: 56px; }
   .tl-date { position: static; background: none; backdrop-filter: none; }
   .pin-zone { padding: var(--sp-4); }
+
+  /* 1024–1279px：隐藏右栏并收窄侧栏。
+     原因：侧栏 220 + 主区最小 900 + 右栏 300 ≈ 1420px，
+     在 1024px 窗口下必然横向溢出，表格会被挤到需要横向滚动。
+     三栏布局从 1280px 起才真正放得下。 */
+  .app[data-device='desktop'] { --sidebar-w: 196px; }
+  .app[data-device='desktop'] .aside { display: none; }
+}
+
+@media (min-width: 1280px) {
+  .app[data-device='desktop'] { --sidebar-w: 220px; }
+  .app[data-device='desktop'] .aside { display: block; }
+}
+
+/* 超宽屏：主区与右栏同步加宽，避免中间过窄 */
+@media (min-width: 1600px) {
+  .app[data-device='desktop'] { --container-max: 1560px; --aside-w: 320px; }
 }
 
 /* 尊重用户的"减少动效"偏好 */

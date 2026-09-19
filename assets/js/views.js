@@ -197,8 +197,9 @@ function toolGrid(state) {
   </nav>`;
 }
 
-/** 标签筛选条 */
+/** 标签筛选条（仅在「发现」页显示；我的 / 说明 页不出现，避免误导） */
 function tagRow(state, dataset) {
+  if (state.route !== 'feed') return '';
   const tags = state.tagCloud || [];
   if (!tags.length) return '';
   const top = tags.slice(0, 10);

@@ -364,8 +364,20 @@ function updateLiveCheck() {
  * 事件处理（全部委托在 appEl 上，只绑一次）
  * ============================================================ */
 
+/** 把界面偏好写入本地存储 —— 刷新/重开后保持用户的选择 */
+function persistUIState() {
+  store.setFilters(state.filters);
+  store.setUiPrefs({
+    board: state.board,
+    quick: state.quick,
+    activeTags: state.activeTags,
+    sort: state.sort,
+  });
+}
+
 function setState(patch, { soft = false } = {}) {
   Object.assign(state, patch);
+  persistUIState();
   if (soft) renderModal(); else render();
 }
 
@@ -514,10 +526,15 @@ function handleAction(e, el) {
     }
 
     case 'delete-mine': {
+      // 先更新数据并整页重渲染，最后关闭弹层。
+      // 顺序很关键：若先关弹层再渲染，renderModal() 会在数据已删除、
+      // 但 state.modal 尚未清空时找不到条目，导致弹层被重新打开。
+      state.modal = null;
       store.removeUserItem(el.dataset.id);
+      state.selected = state.selected.filter((x) => x !== el.dataset.id);
       toast('已删除', 'info');
-      setState({ modal: null }, { soft: true });
       render();
+      renderModal();
       return;
     }
 
@@ -681,7 +698,13 @@ function init() {
     initTheme();
     state.viewMode = store.getViewMode();
     state.device = currentDeviceFromViewport();
+    // 恢复上次的筛选与界面偏好（主题、视图模式已在上面恢复）
     state.filters = { ...store.getFilters(), keyword: '' };
+    const prefs = store.getUiPrefs();
+    if (prefs.board) state.board = prefs.board;
+    if (prefs.quick) state.quick = prefs.quick;
+    if (Array.isArray(prefs.activeTags)) state.activeTags = prefs.activeTags;
+    if (prefs.sort && prefs.sort.key) state.sort = prefs.sort;
     render();
   } catch (err) {
     showFatal(err);
