@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="description" content="珠科校园机会雷达 —— 把来源不同、质量不一的校园活动与机会，整理成新生能看懂、能直接行动的决策面板" />
+  <title>校园机会雷达 · 珠科</title>
+  <link rel="stylesheet" href="./assets/css/tokens.css" />
+  <link rel="stylesheet" href="./assets/css/style.css" />
+</head>
+<body>
+  <!-- 主题在 JS 之前生效，避免刷新时白闪 -->
+  <script>
+    (function () {
+      try {
+        var mode = localStorage.getItem('zhku-opportunity:theme') || 'auto';
+        mode = mode.replace(/^"|"$/g, '');
+        var resolved = mode;
+        if (mode === 'auto') {
+          resolved = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        }
+        document.documentElement.setAttribute('data-theme', resolved);
+        document.documentElement.style.colorScheme = resolved;
+      } catch (e) {}
+    })();
+  </script>
+
+  <div id="app" class="app" aria-busy="true">
+    <div class="boot">正在加载校园机会数据…</div>
+  </div>
+
+  <!-- 提示条容器（操作反馈） -->
+  <div id="toast-host" class="toast-host" aria-live="polite" aria-atomic="true"></div>
+
+  <!-- 弹层容器（详情 / 发布 / 筛选，由 JS 注入） -->
+  <div id="modal-host" class="modal-host" hidden></div>
+
+  <script type="module" src="./assets/js/app.js"></script>
+</body>
+</html>

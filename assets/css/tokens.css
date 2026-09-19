@@ -1,0 +1,260 @@
+/* ============================================================
+ *  tokens.css —— 设计令牌（Design Tokens）
+ *
+ *  这是"双端 × 双主题"架构的关键：把颜色抽成变量，
+ *  于是「手机/电脑」两种结构 × 「浅色/深色」两套色板
+ *  只组合出 4 种表现，而不是维护 4 套界面。
+ *
+ *  规则：其他所有 CSS 文件禁止出现硬编码色值，只能引用本文件的变量。
+ * ============================================================ */
+
+/* ============================================================
+ *  浅色主题（默认）
+ * ============================================================ */
+:root,
+html[data-theme='light'] {
+  color-scheme: light;
+
+  /* ---- 层次背景：用三级背景区分"页面 / 卡片 / 浮层" ---- */
+  --bg-app: #f4f5f7;
+  --bg-surface: #ffffff;
+  --bg-elevated: #ffffff;
+  --bg-sunken: #eceef1;
+  --bg-hover: #f0f2f5;
+  --bg-active: #e6e9ee;
+
+  /* ---- 边框与分隔 ---- */
+  --border: #e3e6ea;
+  --border-strong: #d0d5dc;
+  --divider: #eef0f3;
+
+  /* ---- 文字：三级层次 ---- */
+  --text-primary: #15181d;
+  --text-secondary: #5b636e;
+  --text-tertiary: #8b939f;
+  --text-inverse: #ffffff;
+  --text-on-brand: #ffffff;
+
+  /* ---- 品牌色 ---- */
+  --brand: #2f6fed;
+  --brand-hover: #245bc9;
+  --brand-soft: #e8f0fe;
+  --brand-border: #c5d9fb;
+
+  /* ---- 语义状态色（报名中 / 即将截止 / 已截止…） ---- */
+  --status-open: #10894f;
+  --status-open-bg: #e6f6ee;
+  --status-open-border: #b6e2cb;
+
+  --status-closing: #c2410c;
+  --status-closing-bg: #fdeee6;
+  --status-closing-border: #f7cdb4;
+
+  --status-closed: #6b7280;
+  --status-closed-bg: #f0f1f3;
+  --status-closed-border: #dcdfe4;
+
+  --status-standby: #a16207;
+  --status-standby-bg: #fdf6e3;
+  --status-standby-border: #f0dfae;
+
+  --status-recurring: #1d6fa5;
+  --status-recurring-bg: #e8f3fa;
+  --status-recurring-border: #bcdcf0;
+
+  --status-replay: #6d4aa8;
+  --status-replay-bg: #f1ecfa;
+  --status-replay-border: #d8cbf0;
+
+  /* ---- 风险等级色 ---- */
+  --risk-info: #4b5563;
+  --risk-info-bg: #f3f4f6;
+  --risk-warn: #b45309;
+  --risk-warn-bg: #fef6e7;
+  --risk-warn-border: #f3dfb0;
+  --risk-danger: #b91c1c;
+  --risk-danger-bg: #fdecec;
+  --risk-danger-border: #f5c2c2;
+
+  /* ---- 可信度色 ---- */
+  --cred-official: #1a5fb4;
+  --cred-official-bg: #e9f1fb;
+  --cred-verified: #10894f;
+  --cred-verified-bg: #e6f6ee;
+  --cred-caution: #b45309;
+  --cred-caution-bg: #fef6e7;
+  --cred-suspect: #b91c1c;
+  --cred-suspect-bg: #fdecec;
+
+  /* ---- 完整度进度条 ---- */
+  --meter-track: #e6e9ee;
+  --meter-high: #10894f;
+  --meter-mid: #c98a12;
+  --meter-low: #c2410c;
+
+  /* ---- 阴影：浅色靠阴影建立层级 ---- */
+  --shadow-xs: 0 1px 2px rgba(16, 24, 40, 0.05);
+  --shadow-sm: 0 1px 3px rgba(16, 24, 40, 0.08), 0 1px 2px rgba(16, 24, 40, 0.04);
+  --shadow-md: 0 4px 12px rgba(16, 24, 40, 0.1);
+  --shadow-lg: 0 12px 32px rgba(16, 24, 40, 0.14);
+
+  /* ---- 遮罩 ---- */
+  --overlay: rgba(16, 20, 28, 0.45);
+
+  /* ---- 装饰 ---- */
+  --focus-ring: rgba(47, 111, 237, 0.35);
+}
+
+/* ============================================================
+ *  深色主题
+ *
+ *  注意：这是独立设计的一套色板，不是把浅色反转。
+ *  关键调整：
+ *    1. 文字不用纯白（#E6E8EB），避免暗底发光刺眼
+ *    2. 品牌色提亮（#2F6FED → #5B9BFF），暗底上才够醒目
+ *    3. 状态色与风险色全部重新取值，保证在深色背景上的可读性
+ *       （这是本产品核心信息载体，看不清等于功能失效）
+ *    4. 卡片靠边框区分层级，而非阴影（阴影在暗底几乎不可见）
+ * ============================================================ */
+html[data-theme='dark'] {
+  color-scheme: dark;
+
+  --bg-app: #121417;
+  --bg-surface: #1a1d22;
+  --bg-elevated: #22262d;
+  --bg-sunken: #0e1013;
+  --bg-hover: #242830;
+  --bg-active: #2b303a;
+
+  --border: #2c313a;
+  --border-strong: #3a4150;
+  --divider: #24282f;
+
+  --text-primary: #e6e8eb;
+  --text-secondary: #9aa2ae;
+  --text-tertiary: #6f7885;
+  --text-inverse: #15181d;
+  --text-on-brand: #0d1117;
+
+  --brand: #5b9bff;
+  --brand-hover: #7cb0ff;
+  --brand-soft: #1b2740;
+  --brand-border: #2f4570;
+
+  --status-open: #46c98a;
+  --status-open-bg: #14291f;
+  --status-open-border: #24543c;
+
+  --status-closing: #ff8a5c;
+  --status-closing-bg: #2e1c14;
+  --status-closing-border: #5c3524;
+
+  --status-closed: #8b939f;
+  --status-closed-bg: #22262d;
+  --status-closed-border: #343a44;
+
+  --status-standby: #e0b155;
+  --status-standby-bg: #2c2416;
+  --status-standby-border: #574521;
+
+  --status-recurring: #56b6e8;
+  --status-recurring-bg: #142530;
+  --status-recurring-border: #23485c;
+
+  --status-replay: #b294e8;
+  --status-replay-bg: #241d33;
+  --status-replay-border: #453563;
+
+  --risk-info: #a7aeba;
+  --risk-info-bg: #22262d;
+  --risk-info-border: #343a44;
+  --risk-warn: #e0b155;
+  --risk-warn-bg: #2c2416;
+  --risk-warn-border: #574521;
+  --risk-danger: #ff7b72;
+  --risk-danger-bg: #2e1a1a;
+  --risk-danger-border: #5c2f2c;
+
+  --cred-official: #6fa8ff;
+  --cred-official-bg: #182640;
+  --cred-verified: #46c98a;
+  --cred-verified-bg: #14291f;
+  --cred-caution: #e0b155;
+  --cred-caution-bg: #2c2416;
+  --cred-suspect: #ff7b72;
+  --cred-suspect-bg: #2e1a1a;
+
+  --meter-track: #2b303a;
+  --meter-high: #46c98a;
+  --meter-mid: #e0b155;
+  --meter-low: #ff8a5c;
+
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.45);
+  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.55);
+
+  --overlay: rgba(0, 0, 0, 0.65);
+
+  --focus-ring: rgba(91, 155, 255, 0.45);
+}
+
+/* ============================================================
+ *  与主题无关的令牌：尺寸、圆角、字号、层级
+ * ============================================================ */
+:root {
+  /* 间距（4px 基准） */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+  --sp-10: 40px;
+
+  /* 圆角 */
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 14px;
+  --r-xl: 20px;
+  --r-pill: 999px;
+
+  /* 字号 */
+  --fs-xs: 11px;
+  --fs-sm: 12px;
+  --fs-base: 14px;
+  --fs-md: 15px;
+  --fs-lg: 17px;
+  --fs-xl: 20px;
+  --fs-2xl: 24px;
+  --fs-3xl: 30px;
+
+  /* 行高 */
+  --lh-tight: 1.3;
+  --lh-normal: 1.55;
+  --lh-loose: 1.75;
+
+  /* 字重 */
+  --fw-normal: 400;
+  --fw-medium: 500;
+  --fw-semibold: 600;
+  --fw-bold: 700;
+
+  /* 布局 */
+  --container-max: 1400px;
+  --sidebar-w: 220px;
+  --aside-w: 300px;
+  --topbar-h: 56px;
+  --bottomnav-h: 56px;
+
+  /* 过渡 */
+  --t-fast: 120ms ease;
+  --t-base: 200ms ease;
+
+  /* 字体：中文优先，保证 Windows / macOS 都有好字形 */
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+    'Hiragino Sans GB', 'Microsoft YaHei', 'Source Han Sans SC', 'Noto Sans CJK SC',
+    sans-serif;
+  --font-mono: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+}
