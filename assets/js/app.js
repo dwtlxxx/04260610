@@ -479,6 +479,17 @@ function handleAction(e, el) {
       return;
     }
 
+    case 'clear-search': {
+      state.filters = { ...state.filters, keyword: '' };
+      store.setFilters(state.filters);
+      const input = document.getElementById('search-input');
+      if (input) input.value = '';
+      render();               // 重建顶栏以移除清空按钮
+      const next = document.getElementById('search-input');
+      if (next) next.focus();
+      return;
+    }
+
     case 'timeline-scope': {
       setState({ timelineScope: el.dataset.id });
       return;

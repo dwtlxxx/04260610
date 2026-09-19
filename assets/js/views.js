@@ -69,28 +69,37 @@ export function visibleColumns(state) {
 function topbar(state, dataset) {
   const themeModeLabel = state.themeModeLabel || '跟随系统';
   const deviceLabel = state.device === 'mobile' ? '电脑版' : '手机版';
+  const keyword = state.filters.keyword || '';
+  // 手机端：品牌居中（两侧各一个操作按钮），搜索独占第二行。
+  // 用 grid 的 1fr auto 1fr 实现真正居中——两侧按钮宽度不同也不会把标题挤偏。
   return h`<header class="topbar">
     <div class="topbar-inner">
-      <div class="brand">
-        <span class="brand-logo" aria-hidden="true">机</span>
-        <span class="brand-text">
-          <span class="brand-name">校园机会雷达</span>
-          <span class="brand-sub">珠科 · ${state.totalCount} 条信息已整理</span>
-        </span>
+      <div class="topbar-row">
+        <button class="icon-btn tb-left" data-action="toggle-theme"
+                title="主题：${esc(themeModeLabel)}（点击切换）" aria-label="切换主题，当前${esc(themeModeLabel)}">
+          ${ICON.theme}<span class="mode-label">${esc(themeModeLabel)}</span>
+        </button>
+
+        <div class="brand">
+          <span class="brand-logo" aria-hidden="true">机</span>
+          <span class="brand-text">
+            <span class="brand-name">校园机会雷达</span>
+            <span class="brand-sub">珠科 · ${state.totalCount} 条信息已整理</span>
+          </span>
+        </div>
+
+        <button class="icon-btn tb-right" data-action="toggle-device"
+                title="切换到${deviceLabel}" aria-label="切换到${deviceLabel}">${ICON.device}</button>
       </div>
-      <div class="topbar-spacer"></div>
+
       <div class="search-wrap">
         <span class="icon">${ICON.search}</span>
         <input class="search-input" type="search" id="search-input"
                placeholder="搜索活动、招募、地点、标签…"
-               value="${esc(state.filters.keyword || '')}" aria-label="搜索" />
+               value="${esc(keyword)}" aria-label="搜索" autocomplete="off" />
+        ${keyword ? h`<button class="search-clear" data-action="clear-search"
+            aria-label="清空搜索" title="清空搜索">${ICON.close}</button>` : ''}
       </div>
-      <button class="icon-btn with-label" data-action="toggle-theme"
-              title="主题：${esc(themeModeLabel)}（点击切换）" aria-label="切换主题">
-        ${ICON.theme}<span class="mode-label">${esc(themeModeLabel)}</span>
-      </button>
-      <button class="icon-btn" data-action="toggle-device"
-              title="切换到${deviceLabel}" aria-label="切换到${deviceLabel}">${ICON.device}</button>
     </div>
   </header>`;
 }

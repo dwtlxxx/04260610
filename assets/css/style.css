@@ -85,24 +85,52 @@ a:hover { text-decoration: underline; }
   max-width: var(--container-max);
   margin: 0 auto;
   min-height: var(--topbar-h);
-  display: flex; align-items: center; gap: var(--sp-3);
+  display: flex; flex-direction: column;
+  gap: var(--sp-2);
   padding: var(--sp-2) var(--sp-4);
 }
-.brand { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
+
+/* 顶栏第一行：手机端 = 左侧主题按钮 + 居中品牌 + 右侧切换按钮
+   用 grid 的 1fr auto 1fr，两侧列等宽，品牌因此始终精确居中 */
+.topbar-row {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+}
+.tb-left { justify-self: start; }
+.tb-right { justify-self: end; }
+
+.brand {
+  display: flex; align-items: center; justify-content: center;
+  gap: var(--sp-2); min-width: 0;
+  justify-self: center;
+  text-align: center;
+}
 .brand-logo {
   width: 30px; height: 30px; border-radius: 8px; flex: none;
   background: var(--brand); color: var(--text-on-brand);
   display: grid; place-items: center;
   font-weight: var(--fw-bold); font-size: var(--fs-sm);
 }
-.brand-text { display: flex; flex-direction: column; min-width: 0; }
-.brand-name { font-weight: var(--fw-semibold); font-size: var(--fs-md); white-space: nowrap; }
-.brand-sub { font-size: var(--fs-xs); color: var(--text-tertiary); white-space: nowrap; }
-
-.topbar-spacer { flex: 1; }
+.brand-text { display: flex; flex-direction: column; min-width: 0; align-items: center; }
+.brand-name {
+  font-weight: var(--fw-semibold); font-size: var(--fs-md);
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
+  max-width: 100%;
+}
+.brand-sub {
+  font-size: var(--fs-xs); line-height: 1.25; color: var(--text-tertiary);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;
+}
 
 .search-wrap {
-  position: relative; flex: 1; max-width: 420px;
+  position: relative;
+  width: 100%;
+  min-width: 0;
 }
 .search-wrap .icon {
   position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
@@ -110,6 +138,7 @@ a:hover { text-decoration: underline; }
 }
 .search-input {
   width: 100%;
+  min-width: 0;
   padding: var(--sp-2) var(--sp-3) var(--sp-2) 34px;
   border: 1px solid var(--border);
   border-radius: var(--r-pill);
@@ -123,6 +152,16 @@ a:hover { text-decoration: underline; }
   border-color: var(--brand);
   box-shadow: 0 0 0 3px var(--focus-ring);
 }
+/* 清空搜索：有输入时才出现，右侧留出内边距避免文字被压住 */
+.search-clear {
+  position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+  width: 26px; height: 26px; border-radius: 50%;
+  display: grid; place-items: center;
+  border: none; background: var(--bg-sunken); color: var(--text-tertiary);
+  transition: background var(--t-fast), color var(--t-fast);
+}
+.search-clear:hover { background: var(--bg-active); color: var(--text-primary); }
+.search-wrap:has(.search-clear) .search-input { padding-right: 36px; }
 
 .icon-btn {
   display: inline-grid; place-items: center;
@@ -1583,13 +1622,59 @@ html[data-theme='dark'] {
 .btn:active, .icon-btn:active, .tool-item:active, .nav-item:active, .nav-link:active { transform: scale(.97); }
 .btn, .icon-btn, .tool-item, .nav-link { transition: transform 120ms ease, background var(--t-fast), color var(--t-fast), border-color var(--t-fast); }
 
+/* ============================================================
+ *  响应式媒体查询（统一收口）
+ *
+ *  ⚠ 所有断点集中在此，避免重复段落。
+ *  断点约定：
+ *    <400px   超窄屏（小屏手机）
+ *    400-767  手机
+ *    >=640    表单两列、宫格限宽
+ *    >=768    平板：顶栏回到单行
+ *    >=1024   桌面：可能是三栏（视宽度）
+ *    >=1280   宽屏：真正放得下三栏 + AI 常驻右栏
+ *    >=1600   超宽屏：主区与右栏同步加宽
+ * ============================================================ */
 
+/* —— 顶栏：超窄屏（<400px）压缩，保证品牌不被截断 —— */
+@media (max-width: 399px) {
+  .topbar-inner { padding: var(--sp-2) var(--sp-3); }
+  .brand-logo { width: 26px; height: 26px; font-size: var(--fs-xs); }
+  .brand-name { font-size: var(--fs-base); }
+  .brand-sub { display: none; }
+  .icon-btn { width: 32px; height: 32px; }
+  .search-input { font-size: var(--fs-sm); }
+}
+
+/* —— 顶栏：手机（400–767px）显示副标题，限制品牌宽度避免撑破 —— */
+@media (min-width: 400px) and (max-width: 767px) {
+  .brand { max-width: calc(100% - 76px); }
+}
+
+/* —— 表单与宫格 —— */
 @media (min-width: 640px) {
   .form-grid-2 { grid-template-columns: 1fr 1fr; }
   .field-grid { grid-template-columns: 1fr 1fr; }
   .tool-grid { max-width: 520px; }
 }
 
+/* —— 顶栏：平板及以上回到单行（品牌左 / 搜索中 / 按钮右）—— */
+@media (min-width: 768px) {
+  .topbar-inner {
+    flex-direction: row;
+    align-items: center;
+    gap: var(--sp-3);
+    padding: var(--sp-2) var(--sp-4);
+  }
+  .topbar-row { display: contents; }
+  .brand { order: 1; justify-self: start; text-align: left; }
+  .brand-text { align-items: flex-start; }
+  .search-wrap { order: 2; flex: 1; max-width: 420px; min-width: 120px; }
+  .tb-left { order: 3; }
+  .tb-right { order: 4; }
+}
+
+/* —— 桌面（>=1024px）—— */
 @media (min-width: 1024px) {
   .icon-btn .mode-label { display: inline; font-size: var(--fs-xs); }
   .icon-btn.with-label { width: auto; padding: 0 var(--sp-3); gap: 5px; grid-auto-flow: column; }
@@ -1598,18 +1683,16 @@ html[data-theme='dark'] {
   .tl-date { position: static; background: none; backdrop-filter: none; }
   .pin-zone { padding: var(--sp-4); }
 
-  /* 1024–1279px：隐藏右栏（含 AI 常驻栏）并收窄侧栏。
-     原因：侧栏 220 + 主区最小 900 + 右栏 300 ≈ 1420px，
-     在 1024px 窗口下必然横向溢出。
-     此时 AI 模块改用手机端的悬浮按钮 + 抽屉形态，功能不丢失。 */
+  /* 1024-1279px：隐藏右栏与 AI 常驻栏并收窄侧栏，避免横向溢出。
+     AI 改用悬浮按钮 + 抽屉形态，功能不丢失。 */
   .app[data-device='desktop'] { --sidebar-w: 196px; }
   .app[data-device='desktop'] .aside-col { display: none; }
   .app[data-device='desktop'] .ai-fab { display: grid; }
-  .app[data-device='desktop'] .ai-sheet,
-  .app[data-device='desktop'] .ai-sheet-mask { display: flex; }
+  .app[data-device='desktop'] .ai-sheet { display: flex; }
   .app[data-device='desktop'] .ai-sheet-mask { display: block; }
 }
 
+/* —— 宽屏（>=1280px）：三栏放得下，AI 常驻右栏 —— */
 @media (min-width: 1280px) {
   .app[data-device='desktop'] { --sidebar-w: 220px; }
   .app[data-device='desktop'] .aside-col { display: block; }
@@ -1618,57 +1701,12 @@ html[data-theme='dark'] {
   .app[data-device='desktop'] .ai-sheet-mask { display: none; }
 }
 
-/* 超宽屏：主区与右栏同步加宽，避免中间过窄 */
+/* —— 超宽屏（>=1600px）—— */
 @media (min-width: 1600px) {
   .app[data-device='desktop'] { --container-max: 1560px; --aside-w: 320px; }
 }
 
-/* 尊重用户的"减少动效"偏好 */
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
-}
-
-
-@media (min-width: 640px) {
-  .form-grid-2 { grid-template-columns: 1fr 1fr; }
-  .field-grid { grid-template-columns: 1fr 1fr; }
-  .tool-grid { max-width: 520px; }
-}
-
-@media (min-width: 1024px) {
-  .icon-btn .mode-label { display: inline; font-size: var(--fs-xs); }
-  .icon-btn.with-label { width: auto; padding: 0 var(--sp-3); gap: 5px; grid-auto-flow: column; }
-  .card { padding: var(--sp-4) var(--sp-5); }
-  .fab { width: 56px; height: 56px; }
-  .tl-date { position: static; background: none; backdrop-filter: none; }
-  .pin-zone { padding: var(--sp-4); }
-}
-
-/* 旧规则已删除：右栏统一由 .aside-col 控制，见文件上方 AI 模块与桌面端布局段落 */
-
-/* 超宽屏：主区与右栏同步加宽，避免中间过窄 */
-@media (min-width: 1600px) {
-  .app[data-device='desktop'] { --container-max: 1560px; --aside-w: 320px; }
-}
-
-/* 尊重用户的"减少动效"偏好 */
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
-}
-
-@media (min-width: 640px) {
-  .form-grid-2 { grid-template-columns: 1fr 1fr; }
-  .field-grid { grid-template-columns: 1fr 1fr; }
-}
-
-@media (min-width: 1024px) {
-  .icon-btn .mode-label { display: inline; font-size: var(--fs-xs); }
-  .icon-btn.with-label { width: auto; padding: 0 var(--sp-3); gap: 5px; grid-auto-flow: column; }
-  .card { padding: var(--sp-4) var(--sp-5); }
-  .fab { width: 56px; height: 56px; }
-}
-
-/* 尊重用户的"减少动效"偏好 */
+/* —— 尊重用户的减少动效偏好 —— */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }
