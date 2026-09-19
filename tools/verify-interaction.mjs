@@ -524,5 +524,35 @@ check('空关键词不过滤任何条目',
   deco16.filter((i) => fz.matchesFilters(i, { keyword: '' }, now16)).length === deco16.length);
 
 console.log('');
+console.log('=== 17. 搜索输入 → 结果区局部刷新 ===');
+/* 这一节专门守住一个曾经踩过的坑：
+   refreshResults() 只替换 .main-col 里的"统计条 + feedSection"。
+   搜索理解条如果写在 renderDesktop/renderMobile 里，打字时根本不会更新。
+   所以必须通过"真的触发 input 事件"来验证，而不是只调用渲染函数。 */
+const searchInput = registry['search-input'];
+searchInput.id = 'search-input';
+searchInput.value = 'ymq';
+const inputFns = appEl._listeners?.input || [];
+check('app.js 已绑定搜索输入事件', inputFns.length > 0);
+inputFns.forEach((f) => f({ target: searchInput }));
+await Promise.resolve();
+await Promise.resolve();
+const mainAfterSearch = appEl._main ? appEl._main._html : '';
+check('输入后结果区被替换（局部刷新生效）', mainAfterSearch.length > 0, `${mainAfterSearch.length} 字节`);
+check('结果区给出搜索理解说明', mainAfterSearch.includes('search-hint'));
+check('说明了"拼音 / 首字母"这一匹配方式', mainAfterSearch.includes('拼音 / 首字母'));
+check('结果区确实命中羽毛球约球', mainAfterSearch.includes('羽毛球'));
+const store17 = await import(base + 'store.js');
+check('关键词已持久化（刷新后仍在）', (store17.getFilters().keyword || '') === 'ymq');
+
+// 清空搜索：不应再出现理解条
+searchInput.value = '';
+inputFns.forEach((f) => f({ target: searchInput }));
+await Promise.resolve();
+await Promise.resolve();
+const mainAfterClear = appEl._main ? appEl._main._html : '';
+check('清空关键词后不再显示搜索理解条', !mainAfterClear.includes('search-hint'));
+
+console.log('');
 console.log(`结论：通过 ${pass} 项，失败 ${fail} 项`);
 process.exit(fail ? 1 : 0);
