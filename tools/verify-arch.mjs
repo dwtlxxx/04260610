@@ -148,11 +148,19 @@ const CSS_FUNCS = new Set([
   'repeat', 'fit', 'content', 'url', 'format', 'local', 'minmax', 'matrix',
 ]);
 
+/** 剥离注释，避免把注释里提到的函数名误判为调用（曾把 `find(id)` 误报） */
+function stripComments(src) {
+  return src
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')   // 块注释
+    .replace(/(^|[^:])\/\/[^\n]*/g, '$1'); // 行注释（保留 http:// 这类）
+}
+
 function calledNames(src) {
   const names = new Map();
+  const code = stripComments(src);
   // 排除方法调用（obj.fn()）与 CSS 函数；也排除 new X() 里的构造名
   const re = /(^|[^.\w$])([a-z][A-Za-z0-9_$]*)\s*\(/g;
-  for (const m of src.matchAll(re)) {
+  for (const m of code.matchAll(re)) {
     const n = m[2];
     if (n.length < 3) continue;
     if (CSS_FUNCS.has(n)) continue;
@@ -160,7 +168,7 @@ function calledNames(src) {
   }
   // new Foo() 与 typeof/instanceof 后的标识符单独收集，避免误判为函数调用
   const ctorRe = /new\s+([A-Za-z_$][\w$]*)/g;
-  const ctors = new Set([...src.matchAll(ctorRe)].map((m) => m[1]));
+  const ctors = new Set([...code.matchAll(ctorRe)].map((m) => m[1]));
   for (const c of ctors) names.delete(c);
   return names;
 }

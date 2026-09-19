@@ -439,9 +439,8 @@ export function matchesFilters(item, filters, now) {
   }
 
   if (keyword) {
-    const k = keyword.trim().toLowerCase();
-    const hay = `${item.title} ${item.raw} ${item.org || ''} ${item.place || ''} ${item.audience || ''} ${item.notes || ''}`.toLowerCase();
-    if (!hay.includes(k)) return false;
+    // 使用模糊匹配而非简单子串：用户常记不全关键词或顺序记错
+    if (itemFuzzyScore(item, keyword) <= 0) return false;
   }
 
   return true;
@@ -905,6 +904,107 @@ export function aiOverview(list, now) {
 }
 
 export { AI_KIND, AI_DISCLAIMER, AI_DISCLAIMER_LONG };
+
+/* ============================================================
+ * 模糊搜索
+ *
+ *  为什么需要：用户常记不全关键词或顺序记错。
+ *  例如搜「编程训练」应命中「零基础编程训练营」；
+ *  搜「零基础程序」这种跨越词序的输入也应命中。
+ *
+ *  打分规则（越高越相关）：
+ *    120  完全相同
+ *    100  完整子串（命中位置越靠前分越高）
+ *     90  前缀匹配
+ *     80  词边界匹配（拉丁按词、中文按字边界）
+ *     40  子序列匹配（字符按序出现即可，中间可隔字）
+ *      0  不匹配
+ * ============================================================ */
+
+/**
+ * 子序列匹配：needle 的字符需按序出现，且整体跨度不能过大。
+ *
+ * 限制跨度很关键：中文标题没有空格，若只判断"是否为子序列"，
+ * 「零基础程序」会匹配到很长的文本（如整段原文），甚至誤命中无关条目。
+ * 这里要求首尾字符跨度不超过 spanLimit，使结果更接近用户直觉。
+ *
+ * @returns {number} 命中返回紧凑度分数（1~39），否则 0
+ */
+function subsequenceScore(needle, haystack, spanLimit = 12) {
+  if (!needle || !haystack) return 0;
+  let i = 0;
+  let first = -1;
+  let last = -1;
+  for (let j = 0; j < haystack.length && i < needle.length; j++) {
+    if (haystack[j] === needle[i]) {
+      if (first < 0) first = j;
+      last = j;
+      i++;
+    }
+  }
+  if (i !== needle.length) return 0;
+  const span = last - first + 1;
+  if (span > spanLimit) return 0;
+  // 跨度越接近关键词长度越紧凑，得分越高
+  const tightness = needle.length / span;
+  return Math.max(1, Math.round(39 * tightness));
+}
+
+/** 模糊匹配打分；0 表示不匹配 */
+export function fuzzyScore(keyword, text) {
+  if (!keyword || !text) return 0;
+  const k = String(keyword).toLowerCase().trim();
+  const t = String(text).toLowerCase();
+  if (!k) return 0;
+  if (t === k) return 120;
+  if (t.startsWith(k)) return 90;
+  if (t.includes(k)) return 100 - Math.min(20, t.indexOf(k));
+  // 按标点/空白切段后做前缀匹配（对含空格的拉丁文本有效）
+  const segs = t.split(/[\s·,，。、；;:：/|()（）\[\]【】]+/).filter(Boolean);
+  for (const seg of segs) {
+    if (seg.startsWith(k)) return 80;
+  }
+  return subsequenceScore(k, t);
+}
+
+/**
+ * 对一条信息做模糊搜索，返回最佳分数。
+ *
+ * 支持多词：用空格分隔的多个关键词要求**全部命中**（可命中不同字段），
+ * 取各自分数的平均值。这样「零基础 程序」这类跨词输入也能搜到
+ * 「零基础编程训练营」——单词「零基础程序」并不存在于标题中。
+ *
+ * 字段按重要性加权：标题 > 标签 > 主办方/地点 > 面向对象 > 备注 > 原文。
+ */
+export function itemFuzzyScore(item, keyword) {
+  if (!keyword) return 0;
+  const tokens = String(keyword).toLowerCase().trim().split(/\s+/).filter(Boolean);
+  if (!tokens.length) return 0;
+
+  const fields = [
+    [item.title, 1.0],
+    [(item.tags || []).join(' '), 0.95],
+    [item.org, 0.85],
+    [item.place, 0.85],
+    [item.audience, 0.8],
+    [item.notes, 0.7],
+    [item.raw, 0.6],
+  ];
+
+  let sum = 0;
+  for (const token of tokens) {
+    let best = 0;
+    for (const [val, weight] of fields) {
+      if (!val) continue;
+      const s = fuzzyScore(token, val) * weight;
+      if (s > best) best = s;
+    }
+    // 任一词未命中即整体不匹配
+    if (best <= 0) return 0;
+    sum += best;
+  }
+  return Math.round(sum / tokens.length);
+}
 
 
 export function summarize(list) {

@@ -15,7 +15,7 @@ import {
   SOURCE, KIND, SOURCE_LABEL, KIND_LABEL, BOARD, BOARDS,
   buildDataset, getRawItems, visibleItems, smartSort, matchesFilters, summarize,
   parseTime, formatTime, STATUS, STATUS_LABEL,
-  itemsOfBoard, tagCloud, boardsOf,
+  itemsOfBoard, tagCloud, boardsOf, itemFuzzyScore, statusRank,
 } from './logic.js';
 import * as store from './store.js';
 import { initTheme, cycleTheme, getCurrentMode, resolveTheme, THEME_MODE_LABEL } from './theme.js';
@@ -107,7 +107,19 @@ function computeDataset() {
   // 排序
   const { key, dir } = state.sort;
   const sign = dir === 'asc' ? 1 : -1;
-  if (key === 'smart') {
+  const kw = (state.filters.keyword || '').trim();
+
+  if (kw) {
+    // 有搜索词时按【相关度】优先，其余条件作为次级排序。
+    // 模糊匹配必须配相关性排序才有意义：否则"顺序不完全一致但相关"的结果
+    // 会散落在列表各处，用户以为没搜到。
+    list = [...list].sort((a, b) => {
+      const sa = itemFuzzyScore(a, kw);
+      const sb = itemFuzzyScore(b, kw);
+      if (sa !== sb) return sb - sa;
+      return statusRank(a.status) - statusRank(b.status);
+    });
+  } else if (key === 'smart') {
     list = smartSort(list, state.now);
   } else {
     list = [...list].sort((a, b) => {
@@ -183,22 +195,33 @@ function renderModal() {
     closeModalAnimated();
     return;
   }
-  // 一次算出完整数据集。必须用完整数据集而非筛选后的列表：
-  //   ① 被筛选掉的相关帖子也要出现在关联面板里
-  //   ② 纯补充通知（列表页隐藏）在关联面板中需要展示
-  // rawItems 是【原始未合并】条目：关联面板的"变更对照"必须基于原始值，
-  // 因为主条目的字段已被补充通知覆盖，用合并后的值对比会漏掉真正的变更。
-  // 统一走 getRawItems()，避免数据来源与 buildDataset 不一致。
-  const userItems = store.getUserItems();
-  const allItems = buildDataset(state.now, userItems);
-  const rawItems = getRawItems(userItems);
-  const id = String(state.modal.id);
-  const item = allItems.find((x) => String(x.id) === id);
-  if (!item) { state.modal = null; closeModalAnimated(); return; }
 
-  const content = state.modal.type === 'publish'
-    ? publishHTML()
-    : detailHTML(item, allItems, rawItems);
+  // ⚠ 发布弹层没有 id，必须先分流再查条目。
+  //   早期实现无条件执行 find(id)，而 publish 的 id 为 "undefined"，
+  //   必然查不到 → 走进 !item 分支把 state.modal 清空 → 弹层被自己关掉，
+  //   表现为"点发布按钮没反应"。
+  const isPublish = state.modal.type === 'publish';
+  let content = '';
+  let allItems = null;
+  let rawItems = null;
+
+  if (isPublish) {
+    content = publishHTML();
+  } else {
+    // 详情弹层：需要完整数据集而非筛选后的列表
+    //   ① 被筛选掉的相关帖子也要出现在关联面板里
+    //   ② 纯补充通知（列表页隐藏）在关联面板中需要展示
+    // rawItems 是【原始未合并】条目：关联面板的"变更对照"必须基于原始值，
+    // 因为主条目的字段已被补充通知覆盖，用合并后的值对比会漏掉真正的变更。
+    const userItems = store.getUserItems();
+    allItems = buildDataset(state.now, userItems);
+    rawItems = getRawItems(userItems);
+    const id = String(state.modal.id);
+    const item = allItems.find((x) => String(x.id) === id);
+    if (!item) { state.modal = null; closeModalAnimated(); return; }
+    content = detailHTML(item, allItems, rawItems);
+  }
+
   const sameModal = state.modal.type === state._lastModalType
     && String(state.modal.id) === String(state._lastModalId);
   state._lastModalType = state.modal.type;
@@ -207,7 +230,7 @@ function renderModal() {
   const scrollTop = host.querySelector('.modal')?.scrollTop ?? 0;
   host.hidden = false;
   host.innerHTML = h`<div class="modal-mask" data-action="close-modal">
-    <div class="modal ${state.modal.type === 'publish' ? '' : 'modal-wide'}" role="dialog" aria-modal="true"
+    <div class="modal ${isPublish ? '' : 'modal-wide'}" role="dialog" aria-modal="true"
          data-action="none">${content}</div>
   </div>`;
   document.body.style.overflow = 'hidden';

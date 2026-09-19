@@ -81,32 +81,34 @@ a:hover { text-decoration: underline; }
   backdrop-filter: saturate(150%) blur(10px);
   border-bottom: 1px solid var(--border);
 }
+/* 顶栏内部布局
+   手机端：两行 —— 第一行「品牌 … 按钮组靠右」，第二行搜索独占整行。
+   电脑端：单行 —— 品牌左、搜索中（自适应伸缩）、按钮组靠右。
+   按钮组用 margin-left:auto 靠右，比之前用 order 把按钮散进 flex 流稳定得多。 */
 .topbar-inner {
   max-width: var(--container-max);
   margin: 0 auto;
   min-height: var(--topbar-h);
-  display: flex; flex-direction: column;
-  gap: var(--sp-2);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2) var(--sp-3);
   padding: var(--sp-2) var(--sp-4);
 }
+.brand { flex: 0 1 auto; }
 
-/* 顶栏第一行：手机端 = 左按钮组 + 居中品牌 + 右按钮组
-   用 grid 的 1fr auto 1fr，两侧列等宽，品牌因此始终精确居中 */
-.topbar-row {
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
+/* 按钮组：始终靠右，且不换行、不被压缩 */
+.tb-actions {
+  display: flex;
   align-items: center;
   gap: var(--sp-2);
-  width: 100%;
+  margin-left: auto;
+  flex: none;
 }
-.tb-group { display: flex; align-items: center; gap: var(--sp-2); }
-.tb-group-left { justify-content: flex-start; }
-.tb-group-right { justify-content: flex-end; }
 
 .brand {
   display: flex; align-items: center; justify-content: center;
   gap: var(--sp-2); min-width: 0;
-  justify-self: center;
   text-align: center;
 }
 .brand-logo {
@@ -911,17 +913,24 @@ html[data-theme='dark'] {
 .board-circle.is-active .board-circle-count { background: var(--brand); color: var(--text-on-brand); }
 
 /* ============================================================
- *  工具宫格（手机端快捷入口）
+ *  工具宫格（快捷入口：即将截止 / 新生友好 / 可候补 / 今天 / 需核实）
+ *
+ *  默认铺满整行、5 等分。
+ *  平板及以上改为"按内容宽度居中"：此前只加了 max-width，
+ *  结果宫格挤在左侧、右侧大片留白，视觉失衡（见反馈截图）。
  * ============================================================ */
 .tool-grid {
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  display: flex;
+  justify-content: center;
   gap: var(--sp-1);
   padding: var(--sp-3) var(--sp-3);
   background: var(--bg-surface);
   border-bottom: 1px solid var(--border);
 }
 .tool-item {
+  flex: 1 1 0;
+  min-width: 0;
+  max-width: 128px;
   display: flex; flex-direction: column; align-items: center; gap: 3px;
   padding: var(--sp-2) 2px;
   border: none; background: none;
@@ -1805,7 +1814,7 @@ html[data-theme='dark'] {
  *  断点约定：
  *    <400px   超窄屏（小屏手机）
  *    400-767  手机
- *    >=640    表单两列、宫格限宽
+ *    >=640    表单两列
  *    >=768    平板：顶栏回到单行
  *    >=1024   桌面：可能是三栏（视宽度）
  *    >=1280   宽屏：真正放得下三栏 + AI 常驻右栏
@@ -1822,38 +1831,34 @@ html[data-theme='dark'] {
   .search-input { font-size: var(--fs-sm); }
 }
 
-/* —— 顶栏：手机（400–767px）显示副标题，限制品牌宽度避免撑破 —— */
-@media (min-width: 400px) and (max-width: 767px) {
-  .brand { max-width: calc(100% - 76px); }
+/* —— 顶栏：手机（400–767px）品牌限宽，避免把按钮挤出屏幕 —— */
+@media (max-width: 767px) {
+  .brand { max-width: calc(100% - 132px); }
 }
 
-/* —— 表单与宫格 —— */
+/* —— 表单两列 —— */
 @media (min-width: 640px) {
   .form-grid-2 { grid-template-columns: 1fr 1fr; }
   .field-grid { grid-template-columns: 1fr 1fr; }
-  .tool-grid { max-width: 520px; }
 }
 
-/* —— 顶栏：平板及以上回到单行（左按钮组 + 品牌 / 搜索 / 右按钮）—— */
+/* —— 顶栏：平板及以上回到单行（品牌左 / 搜索中 / 按钮组右）—— */
 @media (min-width: 768px) {
   .topbar-inner {
-    flex-direction: row;
+    flex-wrap: nowrap;          /* 单行：不换行 */
     align-items: center;
     gap: var(--sp-3);
     padding: var(--sp-2) var(--sp-4);
   }
-  /* 单行模式：把按钮组与品牌摊平为直接子项，再用 order 重排成
-     「按钮组 | 品牌 —— 搜索 —— 右按钮」的桌面形态。
-     注意不能用 display:contents 处理 .search-wrap，
-     否则它会落到 grid 第一列（宽度仅 1fr）而无法居中扩展。 */
-  .topbar-row { display: contents; }
-  .tb-group { display: contents; }
-  .brand { order: 1; justify-self: start; text-align: left; flex: none; }
+  .brand { order: 1; flex: 0 1 auto; text-align: left; }
   .brand-text { align-items: flex-start; }
-  .search-wrap { order: 2; flex: 1; max-width: 460px; min-width: 140px; }
-  .sidebar-toggle { order: 3; }
-  .topbar-row .icon-btn[data-action='toggle-theme'] { order: 4; }
-  .tb-group-right .icon-btn { order: 5; }
+  .search-wrap { order: 2; flex: 1 1 auto; max-width: 460px; min-width: 120px; }
+  .tb-actions { order: 3; }
+}
+
+/* 单行空间紧张时（768–1100px）隐藏品牌副标题，优先保证搜索框宽度 */
+@media (min-width: 768px) and (max-width: 1100px) {
+  .brand-sub { display: none; }
 }
 
 /* 手机端：隐藏侧栏开关（没有侧栏可收） */

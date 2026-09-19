@@ -45,46 +45,44 @@ function topbar(state, dataset) {
   const themeModeLabel = state.themeModeLabel || '跟随系统';
   const deviceLabel = state.device === 'mobile' ? '电脑版' : '手机版';
   const keyword = state.filters.keyword || '';
-  // 手机端：品牌居中（两侧为按钮组），搜索独占第二行。
-  // 用 grid 的 1fr auto 1fr 实现真正居中——两侧按钮数量不同也不会把标题挤偏。
-  // 电脑端：按钮组与搜索的位置由 CSS 重新排布（见 style.css 的顶栏适配段）。
+  // 布局说明：
+  //   手机端（<768px）：品牌 + 搜索上下两行，三个操作按钮统一靠右。
+  //   电脑端（≥768px）：品牌左、搜索中、按钮组靠右。
+  // 按钮统一收在 .tb-actions 内并以 margin-left:auto 靠右。
+  // ⚠ 不要再用 order 把按钮散进 flex 流：那样布局不稳定，
+  //    窄屏下按钮会被挤到左侧，且"跟随系统"标签会折行撑高按钮。
   return h`<header class="topbar">
     <div class="topbar-inner">
-      <div class="topbar-row">
-        <div class="tb-group tb-group-left">
-          <button class="icon-btn sidebar-toggle" data-action="toggle-sidebar"
-                  title="${state.sidebarCollapsed ? '展开侧栏' : '收起侧栏'}"
-                  aria-label="${state.sidebarCollapsed ? '展开侧栏' : '收起侧栏'}"
-                  aria-expanded="${!state.sidebarCollapsed}">
-            <span aria-hidden="true">${state.sidebarCollapsed ? '»' : '«'}</span>
-          </button>
-          <button class="icon-btn" data-action="toggle-theme"
-                  title="主题：${esc(themeModeLabel)}（点击切换）" aria-label="切换主题，当前${esc(themeModeLabel)}">
-            ${ICON.theme}<span class="mode-label">${esc(themeModeLabel)}</span>
-          </button>
-        </div>
-
-        <div class="brand">
-          <span class="brand-logo" aria-hidden="true">机</span>
-          <span class="brand-text">
-            <span class="brand-name">校园机会雷达</span>
-            <span class="brand-sub">珠科 · ${state.totalCount} 条信息已整理</span>
-          </span>
-        </div>
-
-        <div class="tb-group tb-group-right">
-          <button class="icon-btn" data-action="toggle-device"
-                  title="切换到${deviceLabel}" aria-label="切换到${deviceLabel}">${ICON.device}</button>
-        </div>
+      <div class="brand">
+        <span class="brand-logo" aria-hidden="true">机</span>
+        <span class="brand-text">
+          <span class="brand-name">校园机会雷达</span>
+          <span class="brand-sub">珠科 · ${state.totalCount} 条信息已整理</span>
+        </span>
       </div>
 
       <div class="search-wrap">
         <span class="icon">${ICON.search}</span>
         <input class="search-input" type="search" id="search-input"
-               placeholder="搜索活动、招募、地点、标签…"
+               placeholder="搜索活动、招募、地点；多个词用空格分隔"
                value="${esc(keyword)}" aria-label="搜索" autocomplete="off" />
         ${keyword ? h`<button class="search-clear" data-action="clear-search"
             aria-label="清空搜索" title="清空搜索">${ICON.close}</button>` : ''}
+      </div>
+
+      <div class="tb-actions">
+        <button class="icon-btn sidebar-toggle" data-action="toggle-sidebar"
+                title="${state.sidebarCollapsed ? '展开侧栏' : '收起侧栏'}"
+                aria-label="${state.sidebarCollapsed ? '展开侧栏' : '收起侧栏'}"
+                aria-expanded="${!state.sidebarCollapsed}">
+          <span aria-hidden="true">${state.sidebarCollapsed ? '»' : '«'}</span>
+        </button>
+        <button class="icon-btn" data-action="toggle-theme"
+                title="主题：${esc(themeModeLabel)}（点击切换）" aria-label="切换主题，当前${esc(themeModeLabel)}">
+          ${ICON.theme}<span class="mode-label">${esc(themeModeLabel)}</span>
+        </button>
+        <button class="icon-btn" data-action="toggle-device"
+                title="切换到${deviceLabel}" aria-label="切换到${deviceLabel}">${ICON.device}</button>
       </div>
     </div>
   </header>`;

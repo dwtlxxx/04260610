@@ -209,7 +209,25 @@ check('应用渲染出内容', appEl.innerHTML.length > 1000, `(${appEl.innerHTM
 check('未停留在加载态', !appEl.innerHTML.includes('正在加载'));
 
 console.log('');
-console.log('=== 2. 发布功能（模拟填写表单并提交）===');
+console.log('=== 2. 打开发布表单（此前的 bug 就在这里，此前未被覆盖）===');
+// ⚠ 这一组是重要回归：renderModal 早期版本无条件按 id 查条目，
+//    而发布弹层没有 id → 查不到 → 清空 state.modal → 弹层自己关闭，
+//    表现为"点发布按钮没反应"。因此必须真点一次按钮并检查表单是否出现。
+modalHost.innerHTML = '';
+modalHost._cachedSel = {};
+const publishBtn = mkBtn('open-publish');
+click(publishBtn);
+const publishHtml = modalHost.innerHTML;
+check('点击发布按钮后弹层被打开', modalHost.hidden === false && publishHtml.length > 500,
+  `长度 ${publishHtml.length}`);
+check('发布表单已渲染', /id="p-title"/.test(publishHtml));
+check('含活动时间输入框', /id="p-startAt"/.test(publishHtml));
+check('含提交按钮', /data-action="submit-publish"/.test(publishHtml));
+check('含实时完整度检查区', /live-check/.test(publishHtml));
+check('含取消按钮', /data-action="close-modal"/.test(publishHtml));
+
+console.log('');
+console.log('=== 3. 发布功能（填写表单并提交）===');
 const before = store.getUserItems().length;
 registry['p-title'].value = '【测试】周五晚自习组队刷题';
 registry['p-startAt'].value = '2026-09-25T19:00';
@@ -227,7 +245,7 @@ check('新条目时间字段正确', created?.startAt === '2026-09-25T19:00');
 check('新条目地点字段正确', created?.place === '图书馆 3 楼研讨间');
 
 console.log('');
-console.log('=== 3. 发布校验（缺少必填项时应阻止）===');
+console.log('=== 4. 发布校验（缺少必填项时应阻止）===');
 registry['p-title'].value = '';
 registry['p-startAt'].value = '';
 const beforeInvalid = store.getUserItems().length;
@@ -236,7 +254,7 @@ check('缺少标题与时间时不予发布', store.getUserItems().length === be
 check('显示校验错误提示', registry['publish-error'].innerHTML.includes('请填写'));
 
 console.log('');
-console.log('=== 4. 收藏逻辑 ===');
+console.log('=== 5. 收藏逻辑 ===');
 const favTarget = 'demo-1';
 check('初始未收藏', !store.isFavorite(favTarget));
 click(mkBtn('toggle-fav', favTarget));
@@ -245,7 +263,7 @@ click(mkBtn('toggle-fav', favTarget));
 check('再次点击取消收藏', !store.isFavorite(favTarget));
 
 console.log('');
-console.log('=== 5. 留言逻辑 ===');
+console.log('=== 6. 留言逻辑 ===');
 registry['comment-input'].value = '场地确认了吗？还缺人吗？';
 click(mkBtn('add-comment', 'demo-2'), { onApp: false });
 const comments = store.getComments('demo-2');
@@ -253,33 +271,33 @@ check('留言已写入', comments.length === 1, `(${comments.length} 条)`);
 check('留言内容正确', comments[0]?.text === '场地确认了吗？还缺人吗？');
 
 console.log('');
-console.log('=== 6. 空留言应被拒绝 ===');
+console.log('=== 7. 空留言应被拒绝 ===');
 registry['comment-input'].value = '   ';
 click(mkBtn('add-comment', 'demo-2'), { onApp: false });
 check('空白留言不写入', store.getComments('demo-2').length === 1);
 
 console.log('');
-console.log('=== 7. 举报逻辑 ===');
+console.log('=== 8. 举报逻辑 ===');
 check('初始未举报', !store.hasReported('demo-2'));
 click(mkBtn('report', 'demo-2'), { onApp: false });
 check('举报已记录', store.hasReported('demo-2'));
 check('重复举报不叠加', store.getReports().filter((r) => r.itemId === 'demo-2').length === 1);
 
 console.log('');
-console.log('=== 8. 删除自己的发布 ===');
+console.log('=== 9. 删除自己的发布 ===');
 const mineCount = store.getUserItems().length;
 const mineId = store.getUserItems()[0]?.id;
 click(mkBtn('delete-mine', mineId), { onApp: false });
 check('删除后数量减少', store.getUserItems().length === mineCount - 1, `(${mineCount} → ${store.getUserItems().length})`);
 
 console.log('');
-console.log('=== 9. 界面偏好持久化 ===');
+console.log('=== 10. 界面偏好持久化 ===');
 click(mkBtn('board', 'official'));
 check('板块选择已保存', store.getUiPrefs().board === 'official');
 click(mkBtn('timeline-scope', 'all'));
 
 console.log('');
-console.log('=== 10. 动画是否真的被触发 ===');
+console.log('=== 11. 动画是否真的被触发 ===');
 const animTotal = () => appEl.animations.length + modalHost.animations.length
   + animationProbe.animations.length
   + (registry.app.querySelector('.modal')?.animations.length || 0);
@@ -297,7 +315,7 @@ check('关闭弹层先播放退场动画', mask.classList.contains('is-closing')
   `(is-closing=${mask.classList.contains('is-closing')})`);
 
 console.log('');
-console.log('=== 11. 打开详情弹层（此前 ReferenceError 就在这条路径上）===');
+console.log('=== 12. 打开详情弹层（此前 ReferenceError 就在这条路径上）===');
 // 先恢复筛选：第 9 项把板块切成了「官方」，而 demo-2 / demo-4 属于学生自发，
 // 不在筛选结果内会导致"弹层找不到条目"而无法打开——那是数据被筛掉，不是 bug。
 click(mkBtn('board', 'all'));
@@ -338,7 +356,7 @@ check('展开后渲染 AI 内容', /ai-embed-body/.test(expanded));
 check('AI 内容带生成标注', /ai-mark/.test(expanded));
 
 console.log('');
-console.log('=== 12. 帖子关联系统 ===');
+console.log('=== 13. 帖子关联系统 ===');
 const logicMod = await import(base + 'logic.js');
 const now12 = new Date('2026-09-19T14:30');
 const rawAll = logicMod.getRawItems();
@@ -381,7 +399,7 @@ check('主条目生效时间已按补充通知覆盖', merged.startAt === '2026-
 check('主条目生效地点已按补充通知覆盖', merged.place === '实验楼 A402', `实际 ${merged.place}`);
 
 console.log('');
-console.log('=== 13. 侧栏开合与排序 ===');
+console.log('=== 14. 侧栏开合与排序 ===');
 // 找回首页（第 12 组把弹层打开了）
 click(mkBtn('close-modal'), { onApp: false });
 
@@ -409,7 +427,7 @@ check('信息流为多列卡片容器', /data-feed-grid|class="feed-grid"/.test(
 check('页面不再出现表格结构', !/class="dtable"/.test(appEl.innerHTML));
 
 console.log('');
-console.log('=== 14. 详情页顶部只呈现事实、解读归入 AI 模块 ===');
+console.log('=== 15. 详情页顶部只呈现事实、解读归入 AI 模块 ===');
 const uiMod = await import(base + 'ui.js');
 const viewsMod = await import(base + 'views.js');
 const now14 = new Date('2026-09-19T14:30');
@@ -452,6 +470,42 @@ if (autoItems.length) {
 } else {
   check('无手写解读的风险条目会生成 AI 解读', true, '（本例均已手写，跳过）');
 }
+
+console.log('');
+console.log('=== 16. 模糊搜索 ===');
+const fz = logicMod;
+
+// 打分函数：子串 / 前缀 / 子序列 / 不匹配
+check('完整子串命中', fz.fuzzyScore('训练营', '【示例】零基础编程训练营') > 0);
+check('前缀命中', fz.fuzzyScore('零基础', '零基础编程训练营') >= 90);
+check('无空格中文子序列命中', fz.fuzzyScore('编程训练', '零基础编程训练营') > 0);
+check('无关词不命中', fz.fuzzyScore('zzz不存在', '零基础编程训练营') === 0);
+check('跨度超限不误命中',
+  fz.fuzzyScore('零基础程序', '【示例】科研助理招募（用于验证招募板块与每周投入）') === 0);
+
+// 多词搜索：各词可命中不同字段，全部命中才算匹配
+const now16 = new Date('2026-09-19T14:30');
+const deco16 = fz.buildDataset(now16);
+const multi = deco16.filter((i) => fz.itemFuzzyScore(i, '零基础 程序') > 0);
+check('多词搜索命中跨词目标', multi.some((i) => String(i.id) === 'demo-1'), `${multi.length} 条`);
+check('多词中任一词未命中则不匹配',
+  deco16.filter((i) => fz.itemFuzzyScore(i, '竞赛 zzz') > 0).length === 0);
+
+// 相关度排序
+const ranked = deco16
+  .map((i) => ({ i, s: fz.itemFuzzyScore(i, '竞赛') }))
+  .filter((x) => x.s > 0)
+  .sort((a, b) => b.s - a.s);
+check('搜索结果可按相关度排序',
+  ranked.length > 0 && ranked[0].s >= ranked[ranked.length - 1].s,
+  ranked.length ? `最高 ${ranked[0].s}` : '');
+
+// matchesFilters 与打分保持一致
+check('关键词过滤与打分一致',
+  deco16.filter((i) => fz.matchesFilters(i, { keyword: '训练营' }, now16)).length
+  === deco16.filter((i) => fz.itemFuzzyScore(i, '训练营') > 0).length);
+check('空关键词不过滤任何条目',
+  deco16.filter((i) => fz.matchesFilters(i, { keyword: '' }, now16)).length === deco16.length);
 
 console.log('');
 console.log(`结论：通过 ${pass} 项，失败 ${fail} 项`);
