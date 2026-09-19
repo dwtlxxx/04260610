@@ -206,6 +206,7 @@
 │   ├── verify-interaction.mjs    # 交互验证：真实"点"一遍按钮并检查数据落库
 │   ├── check-search.mjs          # 搜索自检：召回（必命中）+ 精度（必不命中）双向校验
 │   ├── check-readme.mjs          # 交付文档自检：表格列数、必需链接、过期内容
+│   ├── check-live.mjs            # 线上实测：Pages 资源可达、与本地一致、模块依赖图闭合
 │   └── dbg-search.mjs            # 搜索排查脚本：定位某个词到底命中了哪个字段
 ├── .gitignore / .gitattributes / .nojekyll
 └── README.md
@@ -222,7 +223,11 @@
   node tools/verify-interaction.mjs  # 交互验证（77 项）
   node tools/check-search.mjs        # 搜索自检（44 项）
   node tools/check-readme.mjs        # 交付文档自检（19 项）
+  node tools/check-live.mjs          # 线上实测（23 项，需要网络；推送后 1~2 分钟再跑）
   ```
+  > 前 5 条只依赖本地代码，最后一条验证"线上真的能打开"：
+  > 逐个文件与本地比对内容，并沿着 `import` 把依赖图走一遍。
+  > 这一步专门拦"新增 JS 模块没推上去 → 线上 import 404 → 页面永远停在正在加载"。
 - **搜索的改动约定**：`check-search.mjs` 同时校验**召回**（必须命中）与**精度**（必须不命中）。只加召回不看精度，就会重演"搜 `zzz` 也能出一堆结果"；只加精度不看召回，就会变成"什么都搜不到"。新增词库词后必须重跑，脚本第 ⑨ 节会反过来检查噪声用例本身是否仍然成立。
 - **敏感信息**：SSH 密钥等存放于 `_keys/`，已被 `.gitignore` 拦截，未进入公开仓库
 - **部署**：GitHub Pages，`main` 分支 `/(root)` 直接发布，零构建
