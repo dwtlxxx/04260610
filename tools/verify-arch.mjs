@@ -247,15 +247,17 @@ const checks = [
   ['页面已脱离加载态', !html.includes('正在加载') && html.length > 1000],
   ['未出现致命错误提示', !html.includes('页面加载失败') && !html.includes('启动失败')],
   ['顶部栏已渲染', html.includes('校园机会雷达')],
-  isDesktop ? ['表格视图已渲染', /class="dtable"/.test(html)]
+  // 电脑端信息流默认是双列卡片（feed-grid）；手机端为单列卡片流。
+  // 表格模式需用户手动切换，因此这里不再断言 dtable。
+  isDesktop ? ['双列信息流已渲染', /data-feed-grid/.test(html) && /class="card /.test(html)]
             : ['卡片视图已渲染', /class="card /.test(html)],
   ['状态徽章已生成', /badge st-/.test(html)],
-  // 完整度进度条所在列在窄屏桌面端会被自动隐藏，属预期行为
-  isDesktop && !isWide
-    ? ['窄屏已自动隐藏次要列（完整度）', !/meter-fill/.test(html)]
-    : ['完整度进度条已生成', /meter-fill/.test(html)],
+  // 完整度进度条：
+  //   卡片模式（默认）任何宽度都显示完整度条；
+  //   表格模式在窄屏会隐藏"完整度"列（属预期）。
+  isDesktop ? ['完整度进度条已生成（卡片模式）', /meter-fill/.test(html)]
+            : ['完整度进度条已生成', /meter-fill/.test(html)],
   ['数据已进入列表', /【示例】|蓝桥杯|羽毛球|role-closed/.test(html)],
-  // —— 本轮新增功能 ——
   ['官方 / 学生标识已渲染', /off-mark is-official/.test(html) && /off-mark is-student/.test(html)],
   ['置顶区已渲染', /pin-zone/.test(html) && /pin-card|pin-notice/.test(html)],
   ['置顶理由已显示', /置顶理由：/.test(html)],
@@ -265,10 +267,13 @@ const checks = [
             : ['工具宫格已渲染', /tool-grid/.test(html) && /tool-item/.test(html)],
   ['板块头部已渲染', /board-header|timeline/.test(html)],
   ['高层级视图切换已渲染', /view-switch/.test(html) && /机会列表/.test(html) && /时间线/.test(html)],
-  // AI 模块：电脑端常驻侧栏（含标注）；手机端折叠时只显示悬浮按钮，展开后才有标注
   isDesktop
     ? ['AI 常驻侧栏已渲染且带标注', /ai-dock/.test(html) && /ai-mark/.test(html)]
     : ['AI 悬浮入口已渲染', /ai-fab/.test(html)],
+  ...(isDesktop ? [
+    ['显示方式切换栏已渲染', /viewmode-bar/.test(html) && /双列卡片/.test(html)],
+    ['侧栏开关已渲染', /sidebar-toggle/.test(html)],
+  ] : []),
 ];
 
 // 时间线是独立视图，需单独验证

@@ -32,19 +32,8 @@ import {
  * 不再散落 `state.device === 'mobile'` 的判断，避免改一处漏一处。
  * ============================================================ */
 
-export const LAYOUT = {
-  MOBILE_MAX: 767,
-  DESKTOP_MIN: 1024,
-  WIDE_MIN: 1280,   // 三栏真正放得下的宽度
-};
-
 export function isMobile(state) {
   return state.device === 'mobile';
-}
-
-/** 该形态下是否显示常驻 AI 侧栏（电脑端宽屏才常驻，手机端用底部抽屉） */
-export function hasAiDock(state) {
-  return !isMobile(state);
 }
 
 /** 表格列：窄屏隐藏次要列，保证核心信息不被挤压（title 为核心列，永不隐藏） */
@@ -71,15 +60,24 @@ function topbar(state, dataset) {
   const themeModeLabel = state.themeModeLabel || '跟随系统';
   const deviceLabel = state.device === 'mobile' ? '电脑版' : '手机版';
   const keyword = state.filters.keyword || '';
-  // 手机端：品牌居中（两侧各一个操作按钮），搜索独占第二行。
-  // 用 grid 的 1fr auto 1fr 实现真正居中——两侧按钮宽度不同也不会把标题挤偏。
+  // 手机端：品牌居中（两侧为按钮组），搜索独占第二行。
+  // 用 grid 的 1fr auto 1fr 实现真正居中——两侧按钮数量不同也不会把标题挤偏。
+  // 电脑端：按钮组与搜索的位置由 CSS 重新排布（见 style.css 的顶栏适配段）。
   return h`<header class="topbar">
     <div class="topbar-inner">
       <div class="topbar-row">
-        <button class="icon-btn tb-left" data-action="toggle-theme"
-                title="主题：${esc(themeModeLabel)}（点击切换）" aria-label="切换主题，当前${esc(themeModeLabel)}">
-          ${ICON.theme}<span class="mode-label">${esc(themeModeLabel)}</span>
-        </button>
+        <div class="tb-group tb-group-left">
+          <button class="icon-btn sidebar-toggle" data-action="toggle-sidebar"
+                  title="${state.sidebarCollapsed ? '展开侧栏' : '收起侧栏'}"
+                  aria-label="${state.sidebarCollapsed ? '展开侧栏' : '收起侧栏'}"
+                  aria-expanded="${!state.sidebarCollapsed}">
+            <span aria-hidden="true">${state.sidebarCollapsed ? '»' : '«'}</span>
+          </button>
+          <button class="icon-btn" data-action="toggle-theme"
+                  title="主题：${esc(themeModeLabel)}（点击切换）" aria-label="切换主题，当前${esc(themeModeLabel)}">
+            ${ICON.theme}<span class="mode-label">${esc(themeModeLabel)}</span>
+          </button>
+        </div>
 
         <div class="brand">
           <span class="brand-logo" aria-hidden="true">机</span>
@@ -89,8 +87,10 @@ function topbar(state, dataset) {
           </span>
         </div>
 
-        <button class="icon-btn tb-right" data-action="toggle-device"
-                title="切换到${deviceLabel}" aria-label="切换到${deviceLabel}">${ICON.device}</button>
+        <div class="tb-group tb-group-right">
+          <button class="icon-btn" data-action="toggle-device"
+                  title="切换到${deviceLabel}" aria-label="切换到${deviceLabel}">${ICON.device}</button>
+        </div>
       </div>
 
       <div class="search-wrap">
@@ -110,19 +110,62 @@ export function statsBarHTML(dataset, state) {
   return statsBar(state.summarize(dataset));
 }
 
-export function resultsHTML(state, dataset) {
+/**
+ * 电脑端信息流的显示方式切换 + 排序。
+ * 默认双列卡片（同屏信息更多、高低错落易扫读）；
+ * 需要逐字段横向对比时切到表格。
+ */
+function viewModeBar(state, count) {
+  const modes = [
+    { id: 'cards', label: '双列卡片', icon: '▦', hint: '同屏信息更多，高低错落便于扫读' },
+    { id: 'table', label: '表格', icon: '☰', hint: '逐字段横向对比' },
+  ];
+  const sorts = [
+    { key: 'smart', label: '智能排序', hint: '最该行动的排在最前' },
+    { key: 'deadline', label: '按截止', hint: '报名截止由近到远' },
+    { key: 'startAt', label: '按活动时间', hint: '活动开始由近到远' },
+    { key: 'completeness', label: '按完整度', hint: '信息最完整的靠前' },
+  ];
+  return h`<div class="viewmode-bar">
+    <span class="viewmode-count">${count} 条</span>
+    <div class="seg" role="group" aria-label="显示方式">
+      ${modes.map((m) => h`<button class="seg-btn ${(state.tableMode ? 'table' : 'cards') === m.id ? 'is-active' : ''}"
+          data-action="view-mode" data-id="${esc(m.id)}" title="${esc(m.hint)}">
+        <span aria-hidden="true">${m.icon}</span>${esc(m.label)}</button>`).join('')}
+    </div>
+    <div class="seg" role="group" aria-label="排序方式">
+      ${sorts.map((s) => h`<button class="seg-btn ${state.sort.key === s.key ? 'is-active' : ''}"
+          data-action="sort" data-key="${esc(s.key)}" title="${esc(s.hint)}">${esc(s.label)}</button>`).join('')}
+    </div>
+  </div>`;
+}
+
+/**
+ * 信息流内容：电脑端双列卡片（高低落差），手机端单列。
+ * 供整页渲染与局部刷新（搜索）共用。
+ * 电脑端不再默认用大表格 —— 首页标题 + 关键字段已足够，
+ * 双列排版同屏信息更多，且高低错落更易扫读；
+ * 需要逐字段横向对比时可切到「表格」模式。
+ */
+export function feedSection(state, dataset) {
   const boardId = state.board || BOARD.ALL;
-  const boardItems = itemsOfBoard(dataset, boardId);
+  const items = itemsOfBoard(dataset, boardId);
   const isTimeline = boardId === BOARD.TIMELINE;
+
   if (isTimeline) {
-    return boardItems.length
-      ? timelineView(state, boardItems)
+    return items.length
+      ? timelineView(state, items)
       : emptyState(state, { filtered: true, hint: '当前时间线只显示官方信息，可切换为「全部来源」。' });
   }
-  if (!boardItems.length) return emptyState(state, { filtered: true });
-  return state.device === 'mobile'
-    ? boardItems.map((i) => infoCard(i, state)).join('')
-    : h`<div class="table-wrap">${table(state, boardItems)}</div>`;
+  if (!items.length) return emptyState(state, { filtered: true });
+
+  if (state.device === 'mobile') {
+    return items.map((i) => infoCard(i, state)).join('');
+  }
+  if (state.tableMode) {
+    return h`<div class="table-wrap">${table(state, items)}</div>`;
+  }
+  return h`<div class="feed-grid" data-feed-grid>${items.map((i) => infoCard(i, state)).join('')}</div>`;
 }
 
 function statsBar(s) {
@@ -222,33 +265,32 @@ const REL_META = {
 
 /**
  * 关联帖子面板。
- * @param {object} item       当前查看的条目（合并后的生效版本）
- * @param {object[]} all      全量**原始**条目（用于计算关系与变更对照）
- * @param {object} state      应用状态
  *
- * 变更对照刻意使用原始条目：主条目的字段已被补充通知覆盖，
- * 若拿合并后的值做对比，真正被改掉的字段反而显示不出来。
+ * 参数分工（此前混淆导致"空状态徽章"渲染错误）：
+ *   item       当前条目（已加工，含 status / 格式化时间）
+ *   decorated  全量**已加工**条目 —— 用于计算关系与渲染关联项，
+ *              这样关联项才有状态徽章、可读时间等派生字段
+ *   rawItems   全量**原始未合并**条目 —— 仅用于计算"变更对照"。
+ *              主条目字段已被补充通知覆盖，必须回查原值才能算出真实变更。
  */
-export function relationsPanel(item, all, state) {
-  const rels = relationsOf(item, all);
+export function relationsPanel(item, decorated, rawItems, state) {
+  if (!item) return '';
+  const rels = relationsOf(item, decorated);
   if (!rels.length) return '';
 
-  const rawById = new Map(all.map((i) => [String(i.id), i]));
+  const rawById = new Map((rawItems || []).map((i) => [String(i.id), i]));
   const rawSelf = rawById.get(String(item.id)) || item;
 
   const rows = rels.map(({ item: other, relation }) => {
     const meta = REL_META[relation] || REL_META[RELATION.MANUAL];
 
-    // 变更对照：仅"被更新 / 补充"两类关系需要展示
+    // 变更对照：仅"被更新 / 补充"两类关系需要，且必须基于原始条目
     let diff = [];
-    if (relation === RELATION.SUPERSEDES) {
-      // 对方是本条的补充通知 → 对比"主条目原值"与"对方的值"
+    if (relation === RELATION.SUPERSEDES || relation === RELATION.SUPPLEMENT) {
       const rawOther = rawById.get(String(other.id)) || other;
-      diff = diffBetween(rawSelf, rawOther);
-    } else if (relation === RELATION.SUPPLEMENT) {
-      // 本条是对方的补充通知 → 对比"对方原值"与"本条的值"
-      const rawOther = rawById.get(String(other.id)) || other;
-      diff = diffBetween(rawOther, rawSelf);
+      diff = relation === RELATION.SUPERSEDES
+        ? diffBetween(rawSelf, rawOther)      // 主条目原值 → 补充通知的值
+        : diffBetween(rawOther, rawSelf);     // 对方原值 → 本条的值
     }
 
     return h`<div class="rel-item ${esc(meta.cls)}" data-action="open-detail" data-id="${esc(other.id)}"
@@ -353,7 +395,7 @@ function aiEntryBlock(entry, { compact = false } = {}) {
     </div>` : ''}
 
     ${entry.sources && entry.sources.length ? h`<div class="ai-sources">
-      结论来源：${entry.sources.map((sid) => h`<button class="ai-source-chip"
+      ${entry.sources.map((sid) => h`<button class="ai-source-chip"
         data-action="open-detail" data-id="${esc(sid)}">#${esc(sid)}</button>`).join('')}
     </div>` : ''}
 
@@ -770,7 +812,7 @@ export function renderDesktop(state, dataset) {
   const boardItems = itemsOfBoard(dataset, boardId);
   const isTimeline = boardId === BOARD.TIMELINE;
 
-  const sidebar = h`<aside class="sidebar">
+  const sidebar = h`<aside class="sidebar ${state.sidebarCollapsed ? 'is-collapsed' : ''}">
     ${boardNavPanel(state, dataset)}
     ${state.route === 'feed' ? filterPanel(state) : ''}
   </aside>`;
@@ -803,10 +845,8 @@ export function renderDesktop(state, dataset) {
       ${boardPinZone(state, dataset, boardId)}
       ${isTimeline ? '' : boardHeader(boardId, boardItems.length)}
       ${statsBar(s)}
-      ${isTimeline
-        ? (boardItems.length ? timelineView(state, boardItems)
-          : emptyState(state, { filtered: true, hint: '当前时间线只显示官方信息，可切换为「全部来源」。' }))
-        : h`<div class="table-wrap">${table(state, boardItems)}</div>`}`;
+      ${!isTimeline ? viewModeBar(state, boardItems.length) : ''}
+      ${feedSection(state, dataset)}`;
   }
 
   return h`${topbar(state, dataset)}

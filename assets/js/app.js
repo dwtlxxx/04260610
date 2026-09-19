@@ -22,10 +22,10 @@ import { initTheme, cycleTheme, getCurrentMode, resolveTheme, THEME_MODE_LABEL }
 import {
   esc, h, ICON, toast, statusBadge, sourceTag, kindTag, credibilityBadge,
   fieldGrid, riskList, seriesNote, roleNote, completenessMeter, missingLine,
-  pulse, flash, fadeInUp, busy, scrollToItem,
+  pulse, flash, fadeInUp, busy, scrollToItem, staggerIn, fadeOut,
 } from './ui.js';
 import {
-  renderMobile, renderDesktop, statsBarHTML, resultsHTML,
+  renderMobile, renderDesktop, statsBarHTML, feedSection,
   aiInDetail, relationsPanel,
 } from './views.js';
 
@@ -48,6 +48,8 @@ const state = {
   aiPanel: null,                 // 展开中的 AI 面板：null | dock | sheet | detail
   filters: { keyword: '' },      // 侧栏 / 搜索
   sort: { key: 'smart', dir: 'asc' },
+  tableMode: false,              // 电脑端：false=双列卡片（默认），true=表格
+  sidebarCollapsed: false,       // 电脑端：侧栏是否收起
   favorites: [],
   selected: [],
   now: new Date(),
@@ -153,6 +155,9 @@ function render() {
   appEl.setAttribute('aria-busy', 'false');
   window.scrollTo(0, scrollY);
 
+  // 信息流入场动画：错落上浮（落差感来自每项延迟不同 + 卡片本身高度不一）
+  animateFeed();
+
   // 搜索框聚焦状态保持
   if (state.focusSearch) {
     const input = document.getElementById('search-input');
@@ -162,6 +167,15 @@ function render() {
       state.focusSearch = false;
     }
   }
+}
+
+/** 给信息流卡片播放入场动画。双列/单列通用。 */
+function animateFeed() {
+  const grid = appEl.querySelector('[data-feed-grid]');
+  const cards = grid
+    ? [...grid.querySelectorAll('.card')]
+    : [...appEl.querySelectorAll('.main-col > .card')];
+  staggerIn(cards, { distance: 12, step: 40, duration: 300 });
 }
 
 /** 只重渲染弹层内容（避免整页重绘导致弹层滚动位置丢失） */
@@ -257,7 +271,7 @@ function detailHTML(item, allItems, rawItems) {
 
     <div class="modal-body">
       <!-- 关联信息：置于顶部，便于在"同一件事的多条通知"之间跳转 -->
-      ${relationsPanel(item, rawItems || allItems || [], state)}
+      ${relationsPanel(item, allItems, rawItems, state)}
 
       ${seriesNote(item)}
       ${roleNote(item)}
@@ -443,6 +457,8 @@ function persistUIState() {
     quick: state.quick,
     activeTags: state.activeTags,
     sort: state.sort,
+    tableMode: state.tableMode,
+    sidebarCollapsed: state.sidebarCollapsed,
   });
 }
 
@@ -604,6 +620,23 @@ function handleAction(e, el) {
       return;
     }
 
+    case 'toggle-sidebar': {
+      setState({ sidebarCollapsed: !state.sidebarCollapsed });
+      // 展开时给侧栏面板加错落入场动画
+      requestAnimationFrame(() => {
+        const el = document.querySelector('.sidebar');
+        if (!el || state.sidebarCollapsed) return;
+        el.classList.add('is-animating');
+        setTimeout(() => el.classList.remove('is-animating'), 420);
+      });
+      return;
+    }
+
+    case 'view-mode': {
+      setState({ tableMode: el.dataset.id === 'table' });
+      return;
+    }
+
     case 'sort': {
       const key = el.dataset.key;
       const dir = state.sort.key === key && state.sort.dir === 'asc' ? 'desc' : 'asc';
@@ -749,7 +782,11 @@ appEl.addEventListener('input', (e) => {
   if (e.target.id?.startsWith('p-')) updateLiveCheck();
 });
 
-/** 局部刷新：只替换结果区与统计条，保留顶栏 DOM 与输入焦点 */
+/** 局部刷新：只替换结果区与统计条，保留顶栏 DOM 与输入焦点
+ *
+ *  动画：先让旧内容"上隐"（fadeOut），再替换并让新内容错落浮入。
+ *  这样切换筛选/搜索时是连续的变化，而不是生硬闪烁。
+ */
 function refreshResults() {
   state.now = new Date();
   state.favorites = store.getFavorites();
@@ -757,14 +794,23 @@ function refreshResults() {
   const dataset = computeDataset();
 
   const mainCol = appEl.querySelector('.main-col');
-  if (mainCol) {
+  if (!mainCol) return;
+
+  const renderInto = () => {
     const parts = [];
     if (state.route === 'feed' && state.board !== BOARD.TIMELINE) {
       parts.push(statsBarHTML(dataset, state));
     }
-    parts.push(resultsHTML(state, dataset));
+    parts.push(feedSection(state, dataset));
     mainCol.innerHTML = parts.join('');
-    // 其他区域（侧栏计数、右栏总览）延后整页刷新，避免影响输入
+    animateFeed();
+  };
+
+  const anim = fadeOut(mainCol, { duration: 120 });
+  if (anim && anim.finished) {
+    anim.finished.then(renderInto).catch(renderInto);
+  } else {
+    renderInto();
   }
 }
 
@@ -921,6 +967,8 @@ function init() {
     if (prefs.quick) state.quick = prefs.quick;
     if (Array.isArray(prefs.activeTags)) state.activeTags = prefs.activeTags;
     if (prefs.sort && prefs.sort.key) state.sort = prefs.sort;
+    if (typeof prefs.tableMode === 'boolean') state.tableMode = prefs.tableMode;
+    if (typeof prefs.sidebarCollapsed === 'boolean') state.sidebarCollapsed = prefs.sidebarCollapsed;
     render();
   } catch (err) {
     showFatal(err);

@@ -381,5 +381,40 @@ check('主条目生效时间已按补充通知覆盖', merged.startAt === '2026-
 check('主条目生效地点已按补充通知覆盖', merged.place === '实验楼 A402', `实际 ${merged.place}`);
 
 console.log('');
+console.log('=== 13. 侧栏开合与显示方式切换 ===');
+// 找回首页（第 12 组把弹层打开了）
+click(mkBtn('close-modal'), { onApp: false });
+
+const readUI = () => {
+  const raw = globalThis.localStorage.getItem('zhku-opportunity:ui-prefs');
+  try { return JSON.parse(raw) || {}; } catch { return {}; }
+};
+
+const beforeSide = readUI().sidebarCollapsed === true;
+click(mkBtn('toggle-sidebar'));
+const afterSide = readUI().sidebarCollapsed === true;
+check('侧栏开关会改变并持久化状态', beforeSide !== afterSide,
+  `${beforeSide} → ${afterSide}`);
+
+const beforeMode = readUI().tableMode === true;
+click(mkBtn('view-mode', beforeMode ? 'cards' : 'table'));
+check('显示方式切换会持久化', readUI().tableMode !== beforeMode,
+  `${beforeMode} → ${readUI().tableMode}`);
+
+// 表格模式下应渲染 dtable；卡片模式渲染 feed-grid
+click(mkBtn('view-mode', 'table'));
+check('切换为表格模式后渲染表格', /dtable/.test(appEl.innerHTML));
+click(mkBtn('view-mode', 'cards'));
+check('切换回卡片模式后渲染双列信息流', /data-feed-grid/.test(appEl.innerHTML));
+check('默认卡片模式含高低落差容器', /class="feed-grid"/.test(appEl.innerHTML));
+
+// 排序同样是新工具栏的一部分（注意：排序按钮读的是 data-key，不是 data-id）
+const sortBtn = mkBtn('sort');
+sortBtn.dataset.key = 'deadline';
+click(sortBtn);
+check('排序切换已生效', readUI().sort && readUI().sort.key === 'deadline',
+  readUI().sort ? `key=${readUI().sort.key}` : '未持久化');
+
+console.log('');
 console.log(`结论：通过 ${pass} 项，失败 ${fail} 项`);
 process.exit(fail ? 1 : 0);

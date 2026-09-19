@@ -90,7 +90,7 @@ a:hover { text-decoration: underline; }
   padding: var(--sp-2) var(--sp-4);
 }
 
-/* 顶栏第一行：手机端 = 左侧主题按钮 + 居中品牌 + 右侧切换按钮
+/* 顶栏第一行：手机端 = 左按钮组 + 居中品牌 + 右按钮组
    用 grid 的 1fr auto 1fr，两侧列等宽，品牌因此始终精确居中 */
 .topbar-row {
   display: grid;
@@ -99,8 +99,9 @@ a:hover { text-decoration: underline; }
   gap: var(--sp-2);
   width: 100%;
 }
-.tb-left { justify-self: start; }
-.tb-right { justify-self: end; }
+.tb-group { display: flex; align-items: center; gap: var(--sp-2); }
+.tb-group-left { justify-content: flex-start; }
+.tb-group-right { justify-content: flex-end; }
 
 .brand {
   display: flex; align-items: center; justify-content: center;
@@ -1534,13 +1535,47 @@ html[data-theme='dark'] {
 .ai-caveats-title { font-size: 10px; color: var(--text-tertiary); margin-bottom: 3px; }
 .ai-caveats ul { margin: 0; padding-left: 16px; font-size: var(--fs-xs); color: var(--text-secondary); line-height: var(--lh-normal); }
 
-.ai-sources { font-size: 10px; color: var(--text-tertiary); display: flex; align-items: center; gap: 5px; flex-wrap: wrap; margin-bottom: 6px; }
+.ai-sources {
+  font-size: 10px; color: var(--text-tertiary);
+  display: flex; align-items: center; gap: 5px;
+  flex-wrap: wrap;
+  row-gap: 4px;
+  margin-bottom: 6px;
+  min-width: 0;
+}
+/* "结论来源：" 标签不换行、不参与压缩，否则会与 chip 挤成两行错位 */
+.ai-sources::before {
+  content: '结论来源';
+  flex: none;
+  white-space: nowrap;
+}
 .ai-source-chip {
   padding: 1px 6px; border-radius: var(--r-sm);
   border: 1px solid var(--border); background: var(--bg-surface);
   color: var(--brand); font-size: 10px;
+  max-width: 100%;
+  overflow-wrap: anywhere;   /* 极窄容器下宁可换行，也不撑破卡片 */
+  white-space: nowrap;
 }
 .ai-source-chip:hover { background: var(--brand-soft); }
+
+/* AI 面板滚动区域：预留滚动内边距与渐隐提示，避免内容贴边被"切一半" */
+.ai-dock-body {
+  scroll-padding-top: var(--sp-3);
+  scroll-padding-bottom: var(--sp-4);
+  overscroll-behavior: contain;
+}
+.ai-dock-body::-webkit-scrollbar { width: 8px; }
+.ai-dock-body::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: var(--r-pill);
+}
+.ai-dock-body::-webkit-scrollbar-track { background: transparent; }
+
+/* 手机端抽屉：底部为安全区与底部导航预留空间，避免内容被遮住 */
+.ai-sheet-body {
+  padding-bottom: calc(var(--sp-8) + env(safe-area-inset-bottom, 0px));
+}
 
 .ai-entry-foot { display: flex; justify-content: flex-end; }
 .ai-footer-note {
@@ -1720,6 +1755,120 @@ html[data-theme='dark'] {
 .btn, .icon-btn, .tool-item, .nav-link { transition: transform 120ms ease, background var(--t-fast), color var(--t-fast), border-color var(--t-fast); }
 
 /* ============================================================
+ *  双列信息流（电脑端）
+ *
+ *  需求：首页标题信息已经足够，不必用大表格占满宽度；
+ *        改为双列，并让卡片高度不一产生"高低落差"。
+ *
+ *  实现选择：用 CSS 多列（column-count）而非 grid ——
+ *    grid 会把同一行两张卡拉伸到等高，落差就没了；
+ *    多列是自上而下填充、卡片保持自身高度，天然形成错落效果。
+ * ============================================================ */
+.feed-grid {
+  column-count: 1;
+  column-gap: var(--sp-4);
+}
+@media (min-width: 768px) {
+  .feed-grid { column-count: 2; }
+}
+@media (min-width: 1600px) {
+  .feed-grid { column-count: 3; }
+}
+
+.feed-grid > .card {
+  break-inside: avoid;              /* 关键：禁止卡片被拆分到两列 */
+  -webkit-column-break-inside: avoid;
+  page-break-inside: avoid;
+  margin: 0 0 var(--sp-4);
+  display: inline-block;            /* 配合多列，避免高度计算异常 */
+  width: 100%;
+}
+
+/* 手机端回落单列块级 */
+.app[data-device='mobile'] .feed-grid { column-count: 1; }
+.app[data-device='mobile'] .feed-grid > .card { display: block; }
+
+/* ============================================================
+ *  侧边栏展开 / 收起过渡动画
+ *
+ *  实现：宽度 + 位移 + 透明度联合过渡，配合 main-col 的 flex 变化，
+ *        让"展开/收起"是连续动作而非突然跳变。
+ * ============================================================ */
+.sidebar {
+  transition: width 260ms cubic-bezier(.22,1,.36,1),
+              opacity 200ms ease,
+              transform 260ms cubic-bezier(.22,1,.36,1),
+              margin-right 260ms cubic-bezier(.22,1,.36,1);
+  transform-origin: left center;
+}
+.app[data-device='desktop'] .sidebar.is-collapsed {
+  width: 0;
+  opacity: 0;
+  transform: translateX(-12px);
+  margin-right: calc(-1 * var(--sp-5));
+  overflow: hidden;
+  pointer-events: none;
+}
+.app[data-device='desktop'] .sidebar.is-collapsed > * { opacity: 0; }
+.sidebar > * { transition: opacity 180ms ease; }
+
+/* 展开时逐项浮入，形成错落感 */
+@keyframes panelSlideIn {
+  from { opacity: 0; transform: translateX(-10px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+.sidebar.is-animating > .panel {
+  animation: panelSlideIn 260ms cubic-bezier(.22,1,.36,1) backwards;
+}
+.sidebar.is-animating > .panel:nth-child(2) { animation-delay: 60ms; }
+
+/* 侧栏开关按钮：仅电脑端出现 */
+.sidebar-toggle { display: none; }
+.app[data-device='desktop'] .sidebar-toggle { display: inline-grid; }
+
+/* ============================================================
+ *  显示方式与排序切换栏（电脑端信息流上方）
+ * ============================================================ */
+.viewmode-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+  margin-bottom: var(--sp-3);
+}
+.viewmode-count {
+  font-size: var(--fs-xs);
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+.seg {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  background: var(--bg-sunken);
+  border-radius: var(--r-pill);
+}
+.seg-btn {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 5px var(--sp-3);
+  border: none; background: none;
+  border-radius: var(--r-pill);
+  color: var(--text-secondary);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+  transition: background var(--t-fast), color var(--t-fast), box-shadow var(--t-fast);
+}
+.seg-btn:hover { color: var(--text-primary); }
+.seg-btn.is-active {
+  background: var(--bg-surface);
+  color: var(--brand);
+  font-weight: var(--fw-semibold);
+  box-shadow: var(--shadow-xs);
+}
+/* 排序段靠右，与显示方式分开 */
+.viewmode-bar .seg:last-child { margin-left: auto; }
+
+/* ============================================================
  *  响应式媒体查询（统一收口）
  *
  *  ⚠ 所有断点集中在此，避免重复段落。
@@ -1755,7 +1904,7 @@ html[data-theme='dark'] {
   .tool-grid { max-width: 520px; }
 }
 
-/* —— 顶栏：平板及以上回到单行（品牌左 / 搜索中 / 按钮右）—— */
+/* —— 顶栏：平板及以上回到单行（左按钮组 + 品牌 / 搜索 / 右按钮）—— */
 @media (min-width: 768px) {
   .topbar-inner {
     flex-direction: row;
@@ -1763,12 +1912,23 @@ html[data-theme='dark'] {
     gap: var(--sp-3);
     padding: var(--sp-2) var(--sp-4);
   }
+  /* 单行模式：把按钮组与品牌摊平为直接子项，再用 order 重排成
+     「按钮组 | 品牌 —— 搜索 —— 右按钮」的桌面形态。
+     注意不能用 display:contents 处理 .search-wrap，
+     否则它会落到 grid 第一列（宽度仅 1fr）而无法居中扩展。 */
   .topbar-row { display: contents; }
-  .brand { order: 1; justify-self: start; text-align: left; }
+  .tb-group { display: contents; }
+  .brand { order: 1; justify-self: start; text-align: left; flex: none; }
   .brand-text { align-items: flex-start; }
-  .search-wrap { order: 2; flex: 1; max-width: 420px; min-width: 120px; }
-  .tb-left { order: 3; }
-  .tb-right { order: 4; }
+  .search-wrap { order: 2; flex: 1; max-width: 460px; min-width: 140px; }
+  .sidebar-toggle { order: 3; }
+  .topbar-row .icon-btn[data-action='toggle-theme'] { order: 4; }
+  .tb-group-right .icon-btn { order: 5; }
+}
+
+/* 手机端：隐藏侧栏开关（没有侧栏可收） */
+@media (max-width: 767px) {
+  .sidebar-toggle { display: none !important; }
 }
 
 /* —— 桌面（>=1024px）—— */

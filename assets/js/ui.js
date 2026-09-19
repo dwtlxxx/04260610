@@ -33,14 +33,6 @@ export function h(strings, ...values) {
   return strings.reduce((acc, s, i) => acc + s + (values[i] ?? ''), '');
 }
 
-/** 事件委托：在容器上绑定一次，避免每次渲染重复绑定 */
-export function delegate(root, eventName, selector, handler) {
-  root.addEventListener(eventName, (e) => {
-    const target = e.target.closest(selector);
-    if (target && root.contains(target)) handler(e, target);
-  });
-}
-
 /* ============================================================
  * 状态 → CSS 修饰类
  * ============================================================ */
@@ -64,8 +56,11 @@ export function statusClass(status) {
  * 公共渲染件
  * ============================================================ */
 
-/** 状态徽章：颜色 + 文字双通道，保证深色模式与色觉障碍下都可辨 */
+/** 状态徽章：颜色 + 文字双通道，保证深色模式与色觉障碍下都可辨
+ *  容错：若传入的对象没有派生状态（例如未经 decorate 的原始条目），
+ *        直接返回空串，避免渲染出"只有圆点、没有文字"的空徽章。 */
 export function statusBadge(item, { withCountdown = true } = {}) {
+  if (!item || !item.status || !item.statusLabel) return '';
   const cd = item.deadlineCountdown || item.startCountdown || '';
   const showCd = withCountdown && cd && item.status !== STATUS.ENDED;
   return h`<span class="badge ${statusClass(item.status)}">
@@ -73,8 +68,9 @@ export function statusBadge(item, { withCountdown = true } = {}) {
   </span>`;
 }
 
-/** 可信度徽章 */
+/** 可信度徽章（同样需要容错：原始条目没有 credibility 字段） */
 export function credibilityBadge(item) {
+  if (!item || !item.credibility || !item.credibilityLabel) return '';
   return h`<span class="cred cred-${esc(item.credibility)}">${esc(item.credibilityLabel)}</span>`;
 }
 
@@ -273,6 +269,44 @@ export function scrollToItem(id, { highlight = true } = {}) {
     setTimeout(() => node.classList.remove('is-just-updated'), 1600);
   }
   return true;
+}
+
+/**
+ * 错落入场：给一组元素依次播放上浮淡入。
+ *
+ * 用途：双列信息流在筛选/切换板块后重新排列时，
+ *       让用户感知到"内容变了"，而不是生硬替换。
+ * 落差来自每项延迟不同（stagger），高度不一致时视觉上自然形成错落感。
+ */
+export function staggerIn(nodes, { duration = 260, distance = 10, step = 42, maxDelay = 420 } = {}) {
+  if (!nodes || !nodes.length || reduceMotion()) return;
+  nodes.forEach((el, i) => {
+    if (!el || typeof el.animate !== 'function') return;
+    const delay = Math.min(i * step, maxDelay);
+    try {
+      el.animate(
+        [
+          { opacity: 0, transform: `translateY(${distance}px)` },
+          { opacity: 1, transform: 'translateY(0)' },
+        ],
+        { duration, delay, easing: 'cubic-bezier(.22,1,.36,1)', fill: 'backwards' },
+      );
+    } catch { /* 忽略个别元素失败 */ }
+  });
+}
+
+/** 淡出：用于切换筛选前让旧内容"上隐"，避免闪烁式替换 */
+export function fadeOut(el, { duration = 130 } = {}) {
+  if (!el || reduceMotion() || typeof el.animate !== 'function') return null;
+  try {
+    const anim = el.animate(
+      [{ opacity: 1, transform: 'translateY(0)' }, { opacity: 0, transform: 'translateY(-6px)' }],
+      { duration, easing: 'ease-in', fill: 'forwards' },
+    );
+    return anim;
+  } catch {
+    return null;
+  }
 }
 
 

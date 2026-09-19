@@ -61,7 +61,6 @@ const STATUS_RANK = {
 
 export const CLOSING_WINDOW_HOURS = 48;
 export const HOUR = 3600 * 1000;
-export const DAY = 24 * HOUR;
 
 /* ============================================================
  * 时间工具
@@ -386,39 +385,6 @@ export function smartSort(list, now) {
     return da - db;
   });
 }
-
-export const FILTER_GROUPS = {
-  source: {
-    label: '来源',
-    options: [
-      { value: SOURCE.SCHOOL, label: '校级发布' },
-      { value: SOURCE.COLLEGE, label: '院级发布' },
-      { value: SOURCE.STUDENT, label: '学生自发' },
-    ],
-  },
-  kind: {
-    label: '类型',
-    options: Object.entries(KIND_LABEL).map(([v, l]) => ({ value: v, label: l })),
-  },
-  audience: {
-    label: '适合谁',
-    options: [
-      { value: 'newbie', label: '零基础 / 新生友好' },
-      { value: 'all', label: '全校可参加' },
-      { value: 'senior', label: '高年级专属' },
-      { value: 'team', label: '需要组队' },
-    ],
-  },
-  time: {
-    label: '时间',
-    options: [
-      { value: 'today', label: '今天' },
-      { value: 'week', label: '7 天内' },
-      { value: 'later', label: '更晚' },
-      { value: 'rolling', label: '长期有效' },
-    ],
-  },
-};
 
 const NEWBIE_HINT = /零基础|新生|不限基础|无需|全校/;
 const SENIOR_HINT = /大二|大三|大四|高年级/;
@@ -752,11 +718,6 @@ export function relationsOf(item, allItems) {
     [RELATION.SERIES]: 3, [RELATION.MANUAL]: 4, [RELATION.REPOST]: 5,
   };
   return [...out.values()].sort((a, b) => (rank[a.relation] ?? 9) - (rank[b.relation] ?? 9));
-}
-
-/** 关联面板是否应该展示 */
-export function shouldShowRelations(item, allItems) {
-  return relationsOf(item, allItems).length > 0;
 }
 
 /**
