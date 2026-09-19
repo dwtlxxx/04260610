@@ -765,9 +765,9 @@ export function shouldShowRelations(item, allItems) {
  * 两条重要规则（否则会产出误导性结果）：
  *   ① 只列出"旧值 → 有值的新值"。若新值为空，说明补充通知只是没有重述
  *      该字段，并不代表信息被取消，展示成"→ 未注明"会让用户误判。
- *   ② 参数必须是**未合并的原始条目**。若传合并后的条目（其字段已被补充
- *      通知覆盖），对比等于和自己比，真正被改掉的字段反而显示不出来。
- *      调用方应使用 originalOf() 还原原始值后再比较。
+ *   ② 参数必须是**未合并的原始条目**（来自 getRawItems()）。
+ *      若传合并后的条目（其字段已被补充通知覆盖），对比等于和自己比，
+ *      真正被改掉的字段反而显示不出来。
  */
 export function diffBetween(a, b) {
   if (!a || !b) return [];
@@ -798,17 +798,6 @@ export function diffBetween(a, b) {
   }
   return rows;
 }
-
-/**
- * 取原始条目（未合并、未加工）。
- * 关联面板的"变更对照"依赖它：主条目的字段会被补充通知覆盖，
- * 必须拿到覆盖前的原值才能算出真实变更。
- */
-export function getRawItems(extraItems = []) {
-  const base = USE_DEMO_DATA ? [...ITEMS, ...DEMO_ITEMS] : ITEMS;
-  return [...base, ...extraItems];
-}
-
 
 /** 统计列表中出现过的标签及数量，用于标签筛选入口 */
 export function tagCloud(list) {
