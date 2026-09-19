@@ -7,7 +7,15 @@
  * 两端（手机 / 电脑）共用本层，因此"可候补""快截止"等判定在两种形态下完全一致。
  */
 
-import { ITEMS, SOURCE, KIND, SOURCE_LABEL, KIND_LABEL } from './data.js';
+import { ITEMS, SOURCE, KIND, SOURCE_LABEL, KIND_LABEL, DEMO_ITEMS } from './data.js';
+
+/**
+ * 是否启用演示数据。
+ *
+ * 当前阶段：正式数据（ITEMS）为空，用演示数据验证架构与界面。
+ * 正式数据填入 ITEMS 后，把此开关改为 false 即可（或直接删除演示数据段）。
+ */
+export const USE_DEMO_DATA = true;
 
 /* ============================================================
  * 常量：状态与阈值
@@ -325,24 +333,33 @@ export const CREDIBILITY_LABEL = {
  *   supplements  指向它的补充通知（原始条目，供详情页展示"变更了什么"）
  *   isSupplement 该条本身是否为补充通知（列表页可弱化或直接隐藏）
  */
+/**
+ * 构建展示列表
+ *
+ * 重要：本函数必须保持"不修改入参"的纯函数语义。
+ * 早期版本在合并补充通知时直接改了原始条目对象，导致：
+ *   ① 多次渲染后数据被反复覆盖
+ *   ② 原始数据被污染，难以排查
+ * 因此这里统一使用浅拷贝（{ ...item }）产出新对象。
+ */
 export function buildViewList(items) {
-  const byId = new Map(items.map((i) => [i.id, i]));
-  const merged = items.map((item) => {
-    const supplements = items.filter((o) => o.supplementOf === item.id);
-    // 主条目：被补充通知覆盖的字段，以补充通知为准
+  const list = items.map((i) => ({ ...i }));
+  return list.map((item) => {
+    const supplements = list.filter((o) => o.supplementOf === item.id);
     let effective = item;
     if (supplements.length) {
+      // 被补充通知覆盖的字段，以补充通知为准
       const patch = {};
       for (const s of supplements) {
         if (s.startAt) patch.startAt = s.startAt;
         if (s.place) patch.place = s.place;
         if (s.deadline) patch.deadline = s.deadline;
+        if (s.notes) patch.notes = s.notes;
       }
       effective = { ...item, ...patch, supplementedBy: supplements.map((s) => s.id) };
     }
     return { ...effective, supplements, isSupplement: !!item.isSupplement };
   });
-  return merged;
 }
 
 /** 列表页默认隐藏"纯补充通知"（其内容已并入主条目），避免同一件事出现两次 */
@@ -489,7 +506,8 @@ export function decorate(item, now) {
 
 /** 全量数据 → 加工后的展示列表 */
 export function buildDataset(now, extraItems = []) {
-  const all = [...ITEMS, ...extraItems];
+  const base = USE_DEMO_DATA ? [...ITEMS, ...DEMO_ITEMS] : ITEMS;
+  const all = [...base, ...extraItems];
   const view = buildViewList(all);
   return view.map((i) => decorate(i, now));
 }

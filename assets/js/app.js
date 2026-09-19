@@ -12,7 +12,7 @@
  */
 
 import {
-  ITEMS, SOURCE, KIND, SOURCE_LABEL, KIND_LABEL,
+  SOURCE, KIND, SOURCE_LABEL, KIND_LABEL,
   buildDataset, visibleItems, smartSort, matchesFilters, summarize,
   parseTime, formatTime, STATUS, STATUS_LABEL,
 } from './logic.js';
@@ -609,12 +609,45 @@ window.addEventListener('resize', () => {
  * 启动
  * ============================================================ */
 
+/** 把错误直接显示在页面上 —— 避免"卡在加载界面"这类静默故障无法排查 */
+function showFatal(err) {
+  const msg = (err && (err.stack || err.message)) || String(err);
+  const el = document.getElementById('app');
+  if (!el) return;
+  el.setAttribute('aria-busy', 'false');
+  el.innerHTML = `
+    <div style="max-width:820px;margin:48px auto;padding:24px;font-family:var(--font-sans)">
+      <h2 style="color:var(--risk-danger);margin:0 0 12px">启动失败，已捕获到错误</h2>
+      <p style="color:var(--text-secondary);margin:0 0 16px">
+        请把下面这段信息发给开发者（或直接查看浏览器控制台 F12）。
+      </p>
+      <pre style="background:var(--bg-sunken);border:1px solid var(--border);border-radius:8px;
+                  padding:14px;overflow:auto;font-size:12px;line-height:1.6;
+                  color:var(--text-primary);white-space:pre-wrap">${
+        String(msg).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      }</pre>
+    </div>`;
+}
+
+window.addEventListener('error', (e) => {
+  // 模块加载或运行期未捕获错误
+  showFatal(e.error || e.message || '未知错误');
+});
+window.addEventListener('unhandledrejection', (e) => {
+  showFatal(e.reason || '未处理的 Promise 拒绝');
+});
+
 function init() {
-  initTheme();
-  state.viewMode = store.getViewMode();
-  state.device = currentDeviceFromViewport();
-  state.filters = { ...store.getFilters(), keyword: '' };
-  render();
+  try {
+    initTheme();
+    state.viewMode = store.getViewMode();
+    state.device = currentDeviceFromViewport();
+    state.filters = { ...store.getFilters(), keyword: '' };
+    render();
+  } catch (err) {
+    showFatal(err);
+    throw err;
+  }
 }
 
 init();

@@ -3,37 +3,78 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="description" content="珠科校园机会雷达 —— 把来源不同、质量不一的校园活动与机会，整理成新生能看懂、能直接行动的决策面板" />
+  <meta name="description" content="校园机会雷达 —— 把来源不同、质量不一的校园活动与机会，整理成新生能看懂、能直接行动的决策面板" />
   <title>校园机会雷达 · 珠科</title>
   <link rel="stylesheet" href="./assets/css/tokens.css" />
   <link rel="stylesheet" href="./assets/css/style.css" />
-</head>
-<body>
-  <!-- 主题在 JS 之前生效，避免刷新时白闪 -->
+
   <script>
+    /* ============================================================
+     * 1. 主题预置：在 CSS 应用前决定深浅色，避免刷新时白闪
+     * ============================================================ */
     (function () {
       try {
         var mode = localStorage.getItem('zhku-opportunity:theme') || 'auto';
         mode = mode.replace(/^"|"$/g, '');
         var resolved = mode;
-        if (mode === 'auto') {
+        if (mode === 'auto' || (mode !== 'light' && mode !== 'dark')) {
           resolved = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
         }
         document.documentElement.setAttribute('data-theme', resolved);
         document.documentElement.style.colorScheme = resolved;
-      } catch (e) {}
+      } catch (e) { /* 忽略：主题失败不应阻塞页面 */ }
+    })();
+
+    /* ============================================================
+     * 2. 兜底错误显示（必须放在这里，不能放在 app.js 里）
+     *
+     * 原因：若是 ES Module 解析/加载失败（例如 import 了不存在的导出），
+     *       app.js 整个文件都不会执行，写在其内部的错误处理器也无法注册，
+     *       页面就会永远停在"正在加载"而看不到任何原因。
+     *       这段内联脚本先于模块执行，因此能捕获模块加载错误。
+     * ============================================================ */
+    (function () {
+      function escapeHtml(s) {
+        return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      }
+      window.__showFatal = function (msg) {
+        var el = document.getElementById('app');
+        if (!el) return;
+        el.setAttribute('aria-busy', 'false');
+        el.innerHTML =
+          '<div style="max-width:860px;margin:40px auto;padding:24px;font-family:system-ui,sans-serif">' +
+          '<h2 style="color:#b91c1c;margin:0 0 10px">页面加载失败</h2>' +
+          '<p style="color:#5b636e;margin:0 0 14px;line-height:1.7">' +
+          '请把下面这段信息发给开发者；也可按 <b>F12</b> 打开控制台查看完整报错。</p>' +
+          '<pre style="background:#f4f5f7;border:1px solid #e3e6ea;border-radius:8px;padding:14px;' +
+          'overflow:auto;font-size:12px;line-height:1.6;color:#15181d;white-space:pre-wrap">' +
+          escapeHtml(msg) + '</pre></div>';
+      };
+      window.addEventListener('error', function (e) {
+        if (e && (e.error || e.message)) window.__showFatal((e.error && e.error.stack) || e.message);
+      }, true);
+      window.addEventListener('unhandledrejection', function (e) {
+        window.__showFatal((e.reason && (e.reason.stack || e.reason.message)) || String(e.reason));
+      });
     })();
   </script>
-
-  <div id="app" class="app" aria-busy="true">
-    <div class="boot">正在加载校园机会数据…</div>
+</head>
+<body>
+  <div id="app" class="app" data-device="mobile" aria-busy="true">
+    <div class="boot">正在加载…</div>
   </div>
 
   <!-- 提示条容器（操作反馈） -->
   <div id="toast-host" class="toast-host" aria-live="polite" aria-atomic="true"></div>
 
-  <!-- 弹层容器（详情 / 发布 / 筛选，由 JS 注入） -->
+  <!-- 弹层容器（详情 / 发布，由 JS 注入） -->
   <div id="modal-host" class="modal-host" hidden></div>
+
+  <noscript>
+    <div style="padding:24px;font-family:system-ui,sans-serif">
+      本产品需要启用 JavaScript 才能运行，请在浏览器设置中开启后刷新页面。
+    </div>
+  </noscript>
 
   <script type="module" src="./assets/js/app.js"></script>
 </body>
