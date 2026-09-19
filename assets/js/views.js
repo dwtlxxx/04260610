@@ -95,6 +95,26 @@ function topbar(state, dataset) {
   </header>`;
 }
 
+/** 供局部刷新使用：统计条与结果区可单独渲染，不重建整个页面 */
+export function statsBarHTML(dataset, state) {
+  return statsBar(state.summarize(dataset));
+}
+
+export function resultsHTML(state, dataset) {
+  const boardId = state.board || BOARD.ALL;
+  const boardItems = itemsOfBoard(dataset, boardId);
+  const isTimeline = boardId === BOARD.TIMELINE;
+  if (isTimeline) {
+    return boardItems.length
+      ? timelineView(state, boardItems)
+      : emptyState(state, { filtered: true, hint: '当前时间线只显示官方信息，可切换为「全部来源」。' });
+  }
+  if (!boardItems.length) return emptyState(state, { filtered: true });
+  return state.device === 'mobile'
+    ? boardItems.map((i) => infoCard(i, state)).join('')
+    : h`<div class="table-wrap">${table(state, boardItems)}</div>`;
+}
+
 function statsBar(s) {
   return h`<div class="stats">
     <span class="stat">共 <b>${s.total}</b> 条</span>

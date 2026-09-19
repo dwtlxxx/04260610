@@ -22,8 +22,9 @@ import { initTheme, cycleTheme, getCurrentMode, resolveTheme, THEME_MODE_LABEL }
 import {
   esc, h, ICON, toast, statusBadge, sourceTag, kindTag, credibilityBadge,
   fieldGrid, riskList, seriesNote, roleNote, completenessMeter, missingLine,
+  pulse, flash, fadeInUp, busy, scrollToItem,
 } from './ui.js';
-import { renderMobile, renderDesktop } from './views.js';
+import { renderMobile, renderDesktop, statsBarHTML, resultsHTML } from './views.js';
 
 const MOBILE_MAX = 767;      // <= 767px 视为手机
 const DESKTOP_MIN = 1024;    // >= 1024px 进入桌面布局
@@ -164,22 +165,60 @@ function render() {
 function renderModal() {
   const host = document.getElementById('modal-host');
   if (!state.modal) {
-    host.hidden = true;
-    host.innerHTML = '';
-    document.body.style.overflow = '';
+    closeModalAnimated();
     return;
   }
   const dataset = computeDataset();
   const item = dataset.find((x) => String(x.id) === String(state.modal.id));
-  if (!item) { state.modal = null; renderModal(); return; }
+  if (!item) { state.modal = null; closeModalAnimated(); return; }
 
   const content = state.modal.type === 'publish' ? publishHTML() : detailHTML(item);
+  const sameModal = state.modal.type === state._lastModalType
+    && String(state.modal.id) === String(state._lastModalId);
+  state._lastModalType = state.modal.type;
+  state._lastModalId = state.modal.id;
+
+  const scrollTop = host.querySelector('.modal')?.scrollTop ?? 0;
   host.hidden = false;
   host.innerHTML = h`<div class="modal-mask" data-action="close-modal">
     <div class="modal ${state.modal.type === 'publish' ? '' : 'modal-wide'}" role="dialog" aria-modal="true"
          data-action="none">${content}</div>
   </div>`;
   document.body.style.overflow = 'hidden';
+
+  const modalEl = host.querySelector('.modal');
+  if (modalEl) {
+    // 同一弹层的局部刷新（如发送留言后）保持滚动位置，不重播入场动画
+    if (sameModal) modalEl.scrollTop = scrollTop;
+    else fadeInUp(modalEl, { distance: 14, duration: 240 });
+  }
+}
+
+/** 关闭弹层：先播放退出动画，再移除 DOM（避免"点一下突然消失"的割裂感） */
+function closeModalAnimated() {
+  const host = document.getElementById('modal-host');
+  const mask = host?.querySelector('.modal-mask');
+  if (!mask) {
+    if (host) { host.hidden = true; host.innerHTML = ''; }
+    document.body.style.overflow = '';
+    state._lastModalType = null;
+    state._lastModalId = null;
+    return;
+  }
+  if (mask.classList.contains('is-closing')) return;   // 防止重复触发
+  mask.classList.add('is-closing');
+  const done = () => {
+    host.hidden = true;
+    host.innerHTML = '';
+    document.body.style.overflow = '';
+    state._lastModalType = null;
+    state._lastModalId = null;
+  };
+  // 用动画事件兜底超时，保证任何情况下都能清理
+  let finished = false;
+  const finish = () => { if (!finished) { finished = true; done(); } };
+  mask.addEventListener('animationend', finish, { once: true });
+  setTimeout(finish, 260);
 }
 
 /* ============================================================
@@ -473,8 +512,16 @@ function handleAction(e, el) {
       const id = el.dataset.id;
       const isNowFav = store.toggleFavorite(id);
       toast(isNowFav ? '已加入我的日程' : '已从日程移除', isNowFav ? 'success' : 'info');
+      // 先重渲染，再在更新后的 DOM 上播动画（旧节点已被替换）
       render();
       if (state.modal) renderModal();
+      requestAnimationFrame(() => {
+        const btns = document.querySelectorAll(`[data-action="toggle-fav"][data-id="${CSS.escape(String(id))}"]`);
+        btns.forEach((b) => {
+          pulse(b, { scale: 0.9 });
+          if (isNowFav) flash(b, 'var(--brand)');
+        });
+      });
       return;
     }
 
@@ -537,18 +584,45 @@ function handleAction(e, el) {
     case 'add-comment': {
       const input = document.getElementById('comment-input');
       const text = (input?.value || '').trim();
-      if (!text) { toast('请输入内容', 'danger'); return; }
-      store.addComment(el.dataset.id, text);
-      toast('留言已发布', 'success');
-      renderModal();
+      if (!text) {
+        toast('请先输入内容', 'danger');
+        if (input) { pulse(input, { scale: 0.98 }); input.focus(); }
+        return;
+      }
+      // 按钮反馈：处理中 → 成功
+      const restore = busy(el, '发送中');
+      setTimeout(() => {
+        restore();
+        store.addComment(el.dataset.id, text);
+        toast('留言已发布', 'success');
+        renderModal();
+        requestAnimationFrame(() => {
+          const list = document.querySelectorAll('#modal-host .comment');
+          const last = list[list.length - 1];
+          if (last) { fadeInUp(last, { distance: 10 }); flash(last, 'var(--brand)'); }
+          const box = document.getElementById('modal-host')?.querySelector('.modal');
+          if (box) box.scrollTop = box.scrollHeight;
+          // 恢复焦点，方便连续提问
+          const next = document.getElementById('comment-input');
+          if (next) next.focus();
+        });
+      }, 220);   // 极短延迟只为让"发送中"状态可见
       return;
     }
 
     case 'report': {
       const id = el.dataset.id;
       if (store.hasReported(id)) { toast('你已举报过这条信息', 'info'); return; }
-      store.addReport(id, '用户标记为可疑信息');
-      toast('已提交举报，平台会复核该信息', 'success');
+      const restore = busy(el, '提交中');
+      setTimeout(() => {
+        restore();
+        store.addReport(id, '用户标记为可疑信息');
+        toast('已提交举报，平台会复核该信息', 'success');
+        // 状态变化：按钮变为"已举报"且不可再点，形成真实逻辑闭环
+        el.outerHTML = h`<button class="btn is-reported" disabled>${ICON.check} 已举报</button>`;
+        flash(el.parentElement || document.body, 'var(--risk-warn)');
+        render();
+      }, 220);
       return;
     }
 
@@ -601,15 +675,54 @@ modalHost.addEventListener('click', (e) => {
   handleAction(e, el);
 });
 
-/* 搜索输入：软更新，保持焦点 */
+/* 搜索输入：只重渲染"结果区域"，不重建输入框本身。
+   原因：整页重渲染会销毁并重建 <input>，导致光标丢失、中文输入法组词中断。 */
+let searchTimer = null;
+let composing = false;
+
+appEl.addEventListener('compositionstart', (e) => {
+  if (e.target.id === 'search-input') composing = true;
+});
+appEl.addEventListener('compositionend', (e) => {
+  if (e.target.id === 'search-input') {
+    composing = false;
+    state.filters = { ...state.filters, keyword: e.target.value };
+    store.setFilters(state.filters);
+    refreshResults();
+  }
+});
+
 appEl.addEventListener('input', (e) => {
   if (e.target.id === 'search-input') {
     state.filters = { ...state.filters, keyword: e.target.value };
-    state.focusSearch = true;
-    render();
+    store.setFilters(state.filters);
+    // 中文输入法组词过程中不刷新，避免打断输入
+    if (composing) return;
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(refreshResults, 120);
+    return;
   }
   if (e.target.id?.startsWith('p-')) updateLiveCheck();
 });
+
+/** 局部刷新：只替换结果区与统计条，保留顶栏 DOM 与输入焦点 */
+function refreshResults() {
+  state.now = new Date();
+  state.favorites = store.getFavorites();
+  state.isWide = window.innerWidth >= WIDE_MIN;
+  const dataset = computeDataset();
+
+  const mainCol = appEl.querySelector('.main-col');
+  if (mainCol) {
+    const parts = [];
+    if (state.route === 'feed' && state.board !== BOARD.TIMELINE) {
+      parts.push(statsBarHTML(dataset, state));
+    }
+    parts.push(resultsHTML(state, dataset));
+    mainCol.innerHTML = parts.join('');
+    // 其他区域（侧栏计数、右栏总览）延后整页刷新，避免影响输入
+  }
+}
 
 /* 侧栏复选框筛选 */
 appEl.addEventListener('change', (e) => {
@@ -642,54 +755,66 @@ function submitPublish() {
   const errBox = document.getElementById('publish-error');
 
   const errors = [];
-  if (!title) errors.push('请填写标题');
-  if (!startAt) errors.push('请填写活动时间');
+  if (!title) errors.push('标题');
+  if (!startAt) errors.push('活动时间');
 
   if (errors.length) {
-    if (errBox) errBox.innerHTML = h`<div class="form-error">${esc(errors.join('；'))}</div>`;
-    toast(errors[0], 'danger');
+    if (errBox) errBox.innerHTML = h`<div class="form-error">请填写：${esc(errors.join('、'))}</div>`;
+    toast(`请填写：${errors.join('、')}`, 'danger');
+    // 定位到第一个缺失字段并高亮，让用户知道该改哪里
+    const firstId = !title ? 'p-title' : 'p-startAt';
+    const field = document.getElementById(firstId);
+    if (field) {
+      field.focus();
+      field.classList.add('is-invalid');
+      pulse(field, { scale: 0.995 });
+      setTimeout(() => field.classList.remove('is-invalid'), 1400);
+    }
     return;
   }
 
+  const btn = document.querySelector('[data-action="submit-publish"]');
+  const restore = busy(btn, '发布中');
   const capacity = get('p-capacity');
   const weeklyHours = get('p-weeklyHours');
   const place = get('p-place');
 
-  const item = store.addUserItem({
-    title,
-    kind: get('p-kind') || KIND.MEETUP,
-    source: SOURCE.STUDENT,
-    org: '学生个人发布',
-    raw: [
-      '学生个人发布（由本产品用户提交）',
-      get('p-audience') ? `面向${get('p-audience')}` : '',
-      place ? `地点：${place}` : '地点未提供',
-      capacity ? `人数：${capacity}` : '',
-      get('p-cost') ? `费用：${get('p-cost')}` : '',
-      get('p-notes') || '',
-    ].filter(Boolean).join('；'),
-    // 转为题目数据同构的字段（日期统一为 2026-09-19 时间背景）
-    startAt: startAt.length === 16 ? startAt : startAt.slice(0, 16),
-    deadline: get('p-deadline') ? get('p-deadline').slice(0, 16) : null,
-    place: place || null,
-    placeStatus: place ? null : '未提供',
-    audience: get('p-audience') || null,
-    capacity: capacity ? Number(capacity) : null,
-    cost: get('p-cost') || null,
-    weeklyHours: weeklyHours ? Number(weeklyHours) : null,
-    rolling: false,
-    notes: get('p-notes') || '',
-  });
-
-  setState({ modal: null }, { soft: true });
-  toast('发布成功，已进入信息流', 'success');
-  render();
-  state.selected = [];
-  // 高亮到新发布的内容
   setTimeout(() => {
-    const node = document.querySelector(`[data-id="${item.id}"]`);
-    if (node) node.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  }, 120);
+    restore();
+    const item = store.addUserItem({
+      title,
+      kind: get('p-kind') || KIND.MEETUP,
+      source: SOURCE.STUDENT,
+      org: '学生个人发布',
+      raw: [
+        '学生个人发布（由本产品用户提交）',
+        get('p-audience') ? `面向${get('p-audience')}` : '',
+        place ? `地点：${place}` : '地点未提供',
+        capacity ? `人数：${capacity}` : '',
+        get('p-cost') ? `费用：${get('p-cost')}` : '',
+        get('p-notes') || '',
+      ].filter(Boolean).join('；'),
+      startAt: startAt.slice(0, 16),
+      deadline: get('p-deadline') ? get('p-deadline').slice(0, 16) : null,
+      place: place || null,
+      placeStatus: place ? null : '未提供',
+      audience: get('p-audience') || null,
+      capacity: capacity ? Number(capacity) : null,
+      cost: get('p-cost') || null,
+      weeklyHours: weeklyHours ? Number(weeklyHours) : null,
+      rolling: false,
+      notes: get('p-notes') || '',
+      tags: [get('p-kind') === KIND.MEETUP ? '组局' : '我发布的'],
+    });
+
+    state.modal = null;
+    state.selected = [];
+    render();
+    renderModal();
+    toast('发布成功，已进入信息流', 'success');
+    // 滚动定位到新发布的内容并高亮，形成"我发的东西真的进去了"的确认感
+    requestAnimationFrame(() => scrollToItem(item.id, { highlight: true }));
+  }, 300);
 }
 
 /* ============================================================

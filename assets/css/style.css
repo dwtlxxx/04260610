@@ -1488,8 +1488,101 @@ html[data-theme='dark'] {
 }
 
 /* ============================================================
- *  响应式：桌面端微调
+ *  动画与交互反馈
  * ============================================================ */
+
+/* 弹层入场 / 退场 */
+@keyframes maskIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes maskOut { from { opacity: 1; } to { opacity: 0; } }
+@keyframes panelIn { from { opacity: 0; transform: translateY(18px) scale(.985); } to { opacity: 1; transform: none; } }
+@keyframes panelOut { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(12px) scale(.99); } }
+@keyframes sheetIn { from { transform: translateY(100%); } to { transform: translateY(0); } }
+@keyframes sheetOut { from { transform: translateY(0); } to { transform: translateY(100%); } }
+
+.modal-mask { animation: maskIn 200ms ease-out; }
+.modal-mask.is-closing { animation: maskOut 200ms ease-in forwards; pointer-events: none; }
+.modal { animation: panelIn 240ms cubic-bezier(.22,1,.36,1); }
+.modal-mask.is-closing .modal { animation: panelOut 200ms ease-in forwards; }
+
+/* 手机端抽屉：用位移而非缩放，符合底部抽屉的心理预期 */
+.app[data-device='mobile'] .modal { animation: sheetIn 260ms cubic-bezier(.22,1,.36,1); }
+.app[data-device='mobile'] .modal-mask.is-closing .modal { animation: sheetOut 200ms ease-in forwards; }
+
+/* 处理中：按钮内旋转指示 */
+@keyframes spin { to { transform: rotate(360deg); } }
+.spinner {
+  display: inline-block;
+  width: 12px; height: 12px;
+  margin-right: 5px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: spin 620ms linear infinite;
+  vertical-align: -2px;
+}
+.btn.is-busy { opacity: .8; cursor: progress; }
+.btn.is-reported {
+  color: var(--status-open);
+  border-color: var(--status-open-border);
+  background: var(--status-open-bg);
+  cursor: default;
+  opacity: 1;
+}
+
+/* 表单校验失败的字段 */
+.form-input.is-invalid,
+.form-textarea.is-invalid,
+.form-select.is-invalid {
+  border-color: var(--risk-danger);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--risk-danger) 22%, transparent);
+}
+@keyframes shakeX {
+  0%,100% { transform: translateX(0); }
+  20% { transform: translateX(-4px); }
+  40% { transform: translateX(4px); }
+  60% { transform: translateX(-3px); }
+  80% { transform: translateX(2px); }
+}
+.form-input.is-invalid { animation: shakeX 340ms ease-in-out; }
+
+/* 刚发布 / 刚更新条目的高亮 */
+@keyframes justUpdated {
+  0% { box-shadow: 0 0 0 0 var(--focus-ring); }
+  100% { box-shadow: 0 0 0 14px transparent; }
+}
+.is-just-updated { animation: justUpdated 1500ms ease-out; border-color: var(--brand) !important; }
+
+/* AI 面板展开 / 折叠：高度过渡，避免"突然出现"的割裂感 */
+.ai-dock-body,
+.ai-embed-body {
+  transform-origin: top center;
+  animation: expandIn 240ms cubic-bezier(.22,1,.36,1);
+}
+@keyframes expandIn {
+  from { opacity: 0; transform: translateY(-6px) scaleY(.96); }
+  to { opacity: 1; transform: none; }
+}
+.ai-sheet { animation: sheetIn 260ms cubic-bezier(.22,1,.36,1); }
+.ai-fab { transition: transform 180ms cubic-bezier(.34,1.56,.64,1), background var(--t-fast); }
+.ai-fab:hover { transform: scale(1.06); }
+.ai-fab.is-open { transform: scale(.96); }
+.ai-dock-head, .ai-embed-head { transition: background var(--t-fast); }
+
+/* 列表刷新：轻量上浮淡入，让"筛选生效"可被感知 */
+.result-flash { animation: expandIn 200ms ease-out; }
+
+/* 收藏按钮状态切换的过渡 */
+.btn-fav { transition: background var(--t-fast), border-color var(--t-fast), color var(--t-fast), transform 140ms ease; }
+.btn-fav:active { transform: scale(.95); }
+
+/* 板块切换时圆圈的过渡 */
+.board-circle-icon { transition: all 200ms cubic-bezier(.22,1,.36,1); }
+.vs-tab, .scope-btn, .chip, .tag { transition: all 160ms ease; }
+
+/* 交互元素统一按下反馈 */
+.btn:active, .icon-btn:active, .tool-item:active, .nav-item:active, .nav-link:active { transform: scale(.97); }
+.btn, .icon-btn, .tool-item, .nav-link { transition: transform 120ms ease, background var(--t-fast), color var(--t-fast), border-color var(--t-fast); }
+
 
 @media (min-width: 640px) {
   .form-grid-2 { grid-template-columns: 1fr 1fr; }

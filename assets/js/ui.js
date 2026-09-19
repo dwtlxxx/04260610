@@ -197,8 +197,84 @@ export const ICON = {
 };
 
 /* ============================================================
- * 全局提示条
+ * 动画与交互反馈
+ *
+ * 用 Web Animations API 实现，不依赖 CSS 类，因此任何元素都能直接调用。
+ * 所有动画都尊重"减少动效"偏好（系统设置 reduce motion 时自动跳过）。
  * ============================================================ */
+
+function reduceMotion() {
+  try {
+    return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  } catch {
+    return false;
+  }
+}
+
+/** 元素弹一下（用于点击、收藏、发送成功等即时反馈） */
+export function pulse(el, { scale = 0.94, duration = 180 } = {}) {
+  if (!el || reduceMotion() || typeof el.animate !== 'function') return;
+  try {
+    el.animate(
+      [{ transform: 'scale(1)' }, { transform: `scale(${scale})` }, { transform: 'scale(1)' }],
+      { duration, easing: 'cubic-bezier(.34,1.56,.64,1)' },
+    );
+  } catch { /* 浏览器不支持则静默跳过 */ }
+}
+
+/** 元素闪一下背景（用于"已加入/已提交"状态确认） */
+export function flash(el, color = 'currentColor', duration = 520) {
+  if (!el || reduceMotion() || typeof el.animate !== 'function') return;
+  try {
+    el.animate(
+      [{ backgroundColor: color, opacity: 0.28 }, { backgroundColor: 'transparent', opacity: 0 }],
+      { duration, easing: 'ease-out' },
+    );
+  } catch { /* 忽略 */ }
+}
+
+/** 数字/内容变化时轻微上浮淡入（用于列表刷新） */
+export function fadeInUp(el, { duration = 220, distance = 6 } = {}) {
+  if (!el || reduceMotion() || typeof el.animate !== 'function') return;
+  try {
+    el.animate(
+      [{ opacity: 0, transform: `translateY(${distance}px)` }, { opacity: 1, transform: 'translateY(0)' }],
+      { duration, easing: 'cubic-bezier(.22,1,.36,1)' },
+    );
+  } catch { /* 忽略 */ }
+}
+
+/** 按钮进入"处理中"状态，返回恢复函数 */
+export function busy(btn, text = '处理中…') {
+  if (!btn) return () => {};
+  const original = btn.innerHTML;
+  const wasDisabled = btn.disabled;
+  btn.disabled = true;
+  btn.classList.add('is-busy');
+  btn.innerHTML = h`<span class="spinner" aria-hidden="true"></span>${esc(text)}`;
+  return () => {
+    btn.disabled = wasDisabled;
+    btn.classList.remove('is-busy');
+    btn.innerHTML = original;
+  };
+}
+
+/** 滚动到某个条目并高亮，用于"我刚发布/我刚收藏"的定位反馈 */
+export function scrollToItem(id, { highlight = true } = {}) {
+  const node = document.querySelector(`[data-id="${CSS.escape(String(id))}"]`);
+  if (!node) return false;
+  try {
+    node.scrollIntoView({ behavior: reduceMotion() ? 'auto' : 'smooth', block: 'center' });
+  } catch {
+    node.scrollIntoView();
+  }
+  if (highlight) {
+    node.classList.add('is-just-updated');
+    setTimeout(() => node.classList.remove('is-just-updated'), 1600);
+  }
+  return true;
+}
+
 
 let toastTimer = null;
 
