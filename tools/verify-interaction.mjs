@@ -255,7 +255,7 @@ check('显示校验错误提示', registry['publish-error'].innerHTML.includes('
 
 console.log('');
 console.log('=== 5. 收藏逻辑 ===');
-const favTarget = 'demo-1';
+const favTarget = '1';
 check('初始未收藏', !store.isFavorite(favTarget));
 click(mkBtn('toggle-fav', favTarget));
 check('点击后变为已收藏', store.isFavorite(favTarget));
@@ -265,23 +265,23 @@ check('再次点击取消收藏', !store.isFavorite(favTarget));
 console.log('');
 console.log('=== 6. 留言逻辑 ===');
 registry['comment-input'].value = '场地确认了吗？还缺人吗？';
-click(mkBtn('add-comment', 'demo-2'), { onApp: false });
-const comments = store.getComments('demo-2');
+click(mkBtn('add-comment', '22'), { onApp: false });
+const comments = store.getComments('22');
 check('留言已写入', comments.length === 1, `(${comments.length} 条)`);
 check('留言内容正确', comments[0]?.text === '场地确认了吗？还缺人吗？');
 
 console.log('');
 console.log('=== 7. 空留言应被拒绝 ===');
 registry['comment-input'].value = '   ';
-click(mkBtn('add-comment', 'demo-2'), { onApp: false });
-check('空白留言不写入', store.getComments('demo-2').length === 1);
+click(mkBtn('add-comment', '22'), { onApp: false });
+check('空白留言不写入', store.getComments('22').length === 1);
 
 console.log('');
 console.log('=== 8. 举报逻辑 ===');
-check('初始未举报', !store.hasReported('demo-2'));
-click(mkBtn('report', 'demo-2'), { onApp: false });
-check('举报已记录', store.hasReported('demo-2'));
-check('重复举报不叠加', store.getReports().filter((r) => r.itemId === 'demo-2').length === 1);
+check('初始未举报', !store.hasReported('22'));
+click(mkBtn('report', '22'), { onApp: false });
+check('举报已记录', store.hasReported('22'));
+check('重复举报不叠加', store.getReports().filter((r) => r.itemId === '22').length === 1);
 
 console.log('');
 console.log('=== 9. 删除自己的发布 ===');
@@ -302,7 +302,7 @@ const animTotal = () => appEl.animations.length + modalHost.animations.length
   + animationProbe.animations.length
   + (registry.app.querySelector('.modal')?.animations.length || 0);
 const before10 = animTotal();
-click(mkBtn('toggle-fav', 'demo-3'));
+click(mkBtn('toggle-fav', '3'));
 const after10 = animTotal();
 check('收藏操作触发了动画调用', after10 > before10, `(${before10} → ${after10} 次)`);
 
@@ -316,11 +316,11 @@ check('关闭弹层先播放退场动画', mask.classList.contains('is-closing')
 
 console.log('');
 console.log('=== 12. 打开详情弹层（此前 ReferenceError 就在这条路径上）===');
-// 先恢复筛选：第 9 项把板块切成了「官方」，而 demo-2 / demo-4 属于学生自发，
+// 先恢复筛选：第 14 组把板块切成了「官方」，而 22 号属于学生自发，
 // 不在筛选结果内会导致"弹层找不到条目"而无法打开——那是数据被筛掉，不是 bug。
 click(mkBtn('board', 'all'));
 let opened = 0, openFailed = [];
-for (const id of ['demo-1', 'demo-2', 'demo-3', 'demo-4', 'demo-5']) {
+for (const id of ['1', '2', '3', '4', '5']) {
   try {
     modalHost.innerHTML = '';
     modalHost._cachedSel = {};
@@ -340,7 +340,7 @@ check('五条信息均能打开详情弹层', opened === 5 && openFailed.length 
 // 因此未展开时只有折叠入口，展开后才渲染内容。
 modalHost.innerHTML = '';
 modalHost._cachedSel = {};
-click(mkCard('demo-1'));
+click(mkCard('1'));
 const collapsed = modalHost.innerHTML;
 check('详情内 AI 折叠入口已渲染', /ai-embed/.test(collapsed) && /ai-embed-head/.test(collapsed));
 check('折叠态下不渲染 AI 内容（非主动点击不触发）', !/ai-embed-body/.test(collapsed));
@@ -364,7 +364,7 @@ const rawAll = logicMod.getRawItems();
 // 打开主条目：应出现关联面板，并列出补充通知与变更对照
 modalHost.innerHTML = '';
 modalHost._cachedSel = {};
-click(mkCard('demo-1'));
+click(mkCard('1'));
 const relHtml = modalHost.innerHTML;
 check('详情顶部出现关联面板', /rel-panel/.test(relHtml));
 check('关联项被渲染', /rel-item/.test(relHtml));
@@ -376,25 +376,32 @@ check('关联项可点击（带 data-action）', /data-action="open-detail"/.tes
 
 // 点击关联项可跳转到对方帖子
 modalHost._cachedSel = {};
-click(mkCard('demo-1b'));
+click(mkCard('9'));
 const jumped = modalHost.innerHTML;
 check('点击关联可跳转到对方帖子', /补充通知/.test(jumped) && /rel-panel/.test(jumped));
 
 // 无关联的条目不应出现空面板
 modalHost.innerHTML = '';
 modalHost._cachedSel = {};
-click(mkCard('demo-2'));
+click(mkCard('24'));
 check('无关联条目不渲染关联面板', !/rel-panel/.test(modalHost.innerHTML));
 
-// 重发关系识别
-const reposts = logicMod.relationsOf(
-  rawAll.find((x) => x.id === 'demo-3'), rawAll,
-).filter((r) => r.relation === logicMod.RELATION.REPOST);
+// 重发关系识别。
+// 题目材料里**没有**"同一内容再次发布"的条目，因此用合成数据验证该能力：
+// 标题归一化后相同、正文不同，应识别为「同一内容的再次发布」。
+const synthetic = [
+  { id: 'syn-1', title: '【示例】学科竞赛校内选拔', raw: '第一版内容',
+    kind: logicMod.KIND.ACTIVITY, source: logicMod.SOURCE.SCHOOL, org: '校级' },
+  { id: 'syn-2', title: '【示例】学科竞赛校内选拔（最新）', raw: '第二版内容已修改',
+    kind: logicMod.KIND.ACTIVITY, source: logicMod.SOURCE.SCHOOL, org: '校级' },
+];
+const reposts = logicMod.relationsOf(synthetic[0], synthetic)
+  .filter((r) => r.relation === logicMod.RELATION.REPOST);
 check('能识别"同一内容的再次发布"', reposts.length === 1,
-  reposts.length ? `→ #${reposts[0].item.id}` : '');
+  reposts.length ? `→ #${reposts[0].item.id}` : '（合成数据未识别出重发关系）');
 
 // 合并语义：主条目生效值应来自补充通知
-const merged = logicMod.buildDataset(now12).find((x) => String(x.id) === 'demo-1');
+const merged = logicMod.buildDataset(now12).find((x) => String(x.id) === '1');
 check('主条目生效时间已按补充通知覆盖', merged.startAt === '2026-09-21T19:30', `实际 ${merged.startAt}`);
 check('主条目生效地点已按补充通知覆盖', merged.place === '实验楼 A402', `实际 ${merged.place}`);
 
@@ -448,14 +455,23 @@ check('顶部风险区不含任何建议性措辞', advisoryInTop === 0,
 const sampleFact = uiMod.riskList(riskItems[0], { mode: 'fact' }).replace(/<[^>]+>/g, ' ').trim();
 check('顶部风险区包含事实陈述', /原文/.test(sampleFact), sampleFact.slice(0, 36));
 
-// AI 模式：应含解读与建议
-const sampleFull = uiMod.riskList(riskItems[0], { mode: 'full' }).replace(/<[^>]+>/g, ' ').trim();
-check('AI 模式包含解读与建议', sampleFull.length >= sampleFact.length && /建议|谨慎|尚未确定/.test(sampleFull));
+// AI 模式：应含解读与建议。
+// 注意要挑一个"确有建议性措辞"的条目 —— 有些条目（如仅"报名截止未注明"）
+// 的解读本身就不含"建议"，用这类条目断言会误判。
+const advisoryItem = riskItems.find((i) =>
+  /建议|谨慎|不要|尽早|暂不|自行确认/.test(uiMod.riskList(i, { mode: 'full' }).replace(/<[^>]+>/g, ' ')));
+check('存在含建议性措辞的条目可供验证', !!advisoryItem, advisoryItem ? `#${advisoryItem.id}` : '');
+if (advisoryItem) {
+  const fullTxt = uiMod.riskList(advisoryItem, { mode: 'full' }).replace(/<[^>]+>/g, ' ');
+  const factTxt = uiMod.riskList(advisoryItem, { mode: 'fact' }).replace(/<[^>]+>/g, ' ');
+  check('AI 模式包含解读与建议', /建议|谨慎|不要|尽早|暂不|自行确认/.test(fullTxt));
+  check('同一内容的 fact 模式不含建议', !/建议|谨慎|请自行|应当|需自行/.test(factTxt));
+}
 
 // 详情页顶部区块的标题已改为"原文中的客观提示"
 modalHost.innerHTML = '';
 modalHost._cachedSel = {};
-click(mkCard('demo-2'));
+click(mkCard('24'));
 const modal14 = modalHost.innerHTML;
 check('顶部区块标题为「原文中的客观提示」', /原文中的客观提示/.test(modal14));
 check('顶部区块不再自称「信息质量提示」', !/>信息质量提示/.test(modal14));
@@ -487,7 +503,7 @@ check('跨度超限不误命中',
 const now16 = new Date('2026-09-19T14:30');
 const deco16 = fz.buildDataset(now16);
 const multi = deco16.filter((i) => fz.itemFuzzyScore(i, '零基础 程序') > 0);
-check('多词搜索命中跨词目标', multi.some((i) => String(i.id) === 'demo-1'), `${multi.length} 条`);
+check('多词搜索命中跨词目标', multi.some((i) => String(i.id) === '1'), `${multi.length} 条`);
 check('多词中任一词未命中则不匹配',
   deco16.filter((i) => fz.itemFuzzyScore(i, '竞赛 zzz') > 0).length === 0);
 

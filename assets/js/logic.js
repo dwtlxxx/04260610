@@ -16,10 +16,10 @@ import {
 /**
  * 是否启用演示数据。
  *
- * 当前阶段：正式数据（ITEMS）为空，用演示数据验证架构与界面。
- * 正式数据填入 ITEMS 后，把此开关改为 false 即可（或直接删除演示数据段）。
+ * 当前阶段：已恢复题目提供的 26 条数据，演示数据关闭。
+ * 若需回到"仅演示数据"的架构验证状态，把此开关改回 true 即可。
  */
-export const USE_DEMO_DATA = true;
+export const USE_DEMO_DATA = false;
 
 /* ============================================================
  * 常量：状态与阈值
@@ -364,7 +364,13 @@ export const CREDIBILITY_LABEL = {
 export function buildViewList(items) {
   const list = items.map((i) => ({ ...i }));
   return list.map((item) => {
-    const supplements = list.filter((o) => o.supplementOf === item.id);
+    // ⚠ id 比较必须做字符串归一化：
+    //   题目数据的 id 是数字（1,2,3…），而用户发布内容的 id 是字符串（u…），
+    //   `o.supplementOf === item.id` 在两侧类型不一致时会静默失配。
+    //   本文件其他 id 比较（relationsOf 等）已统一用 String()，此处保持一致。
+    const supplements = list.filter(
+      (o) => o.supplementOf != null && String(o.supplementOf) === String(item.id),
+    );
     let effective = item;
     if (supplements.length) {
       // 被补充通知覆盖的字段，以补充通知为准
