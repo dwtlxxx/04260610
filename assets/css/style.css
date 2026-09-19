@@ -416,17 +416,15 @@ a:hover { text-decoration: underline; }
 
 /* ============================================================
  *  桌面端：侧栏 + 主区 + 右栏
+ *
+ *  右栏在代码中名为 .aside-col（内含 AI 常驻栏 + aside-scroll），
+ *  旧的 .aside 规则已废弃，避免与 .aside-col 的 display 规则冲突。
  * ============================================================ */
-.sidebar, .aside { display: none; }
+.sidebar { display: none; }
 
 .app[data-device='desktop'] .sidebar {
   display: block;
   width: var(--sidebar-w); flex: none;
-  padding-top: var(--sp-5);
-}
-.app[data-device='desktop'] .aside {
-  display: block;
-  width: var(--aside-w); flex: none;
   padding-top: var(--sp-5);
 }
 .app[data-device='desktop'] .main-col { padding-top: var(--sp-5); }
@@ -1178,6 +1176,318 @@ html[data-theme='dark'] {
 .app[data-device='mobile'] .tag-row { margin-bottom: var(--sp-3); }
 
 /* ============================================================
+ *  高层级视图切换（机会列表 / 时间线）
+ * ============================================================ */
+.view-switch {
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border);
+  padding: var(--sp-2) var(--sp-4);
+}
+.view-switch-tabs {
+  display: flex; gap: 3px;
+  background: var(--bg-sunken);
+  padding: 3px;
+  border-radius: var(--r-pill);
+  width: fit-content;
+}
+.vs-tab {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 7px var(--sp-4);
+  border: none; background: none;
+  border-radius: var(--r-pill);
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+  transition: all var(--t-fast);
+}
+.vs-tab:hover { color: var(--text-primary); }
+.vs-tab.is-active {
+  background: var(--bg-surface);
+  color: var(--brand);
+  font-weight: var(--fw-semibold);
+  box-shadow: var(--shadow-xs);
+}
+.vs-tab-n { font-size: var(--fs-xs); opacity: .6; }
+
+/* 时间线显示范围 */
+.scope-row {
+  display: flex; align-items: center; gap: var(--sp-2);
+  margin-top: var(--sp-3); flex-wrap: wrap;
+}
+.scope-label { font-size: var(--fs-xs); color: var(--text-tertiary); }
+.scope-btn {
+  padding: 4px var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  font-size: var(--fs-xs);
+  transition: all var(--t-fast);
+}
+.scope-btn:hover { border-color: var(--brand-border); color: var(--brand); }
+.scope-btn.is-active { background: var(--brand); border-color: var(--brand); color: var(--text-on-brand); font-weight: var(--fw-medium); }
+.scope-hint { font-size: var(--fs-xs); color: var(--text-tertiary); margin-left: auto; }
+
+/* ============================================================
+ *  AI 整合模块
+ *
+ *  要求：层级高、主页与帖子内均可用、电脑端右栏固定常驻、
+ *        默认折叠不主动弹出、所有输出必须带 AI 标注。
+ * ============================================================ */
+
+/* AI 标注徽章：任何 AI 输出旁都必须出现，且样式上不可隐藏 */
+.ai-mark {
+  display: inline-flex; align-items: center; gap: 3px;
+  padding: 1px 6px;
+  border-radius: var(--r-sm);
+  font-size: 10px; font-weight: var(--fw-medium);
+  color: var(--ai-accent);
+  background: var(--ai-soft);
+  border: 1px solid var(--ai-border);
+  white-space: nowrap;
+  flex: none;
+}
+.ai-mark-spark { font-size: 9px; }
+:root {
+  --ai-accent: #6d4aa8;
+  --ai-soft: #f3effb;
+  --ai-border: #ddd0f2;
+  --ai-glow: rgba(109, 74, 168, .16);
+}
+html[data-theme='dark'] {
+  --ai-accent: #b294e8;
+  --ai-soft: #241d33;
+  --ai-border: #453563;
+  --ai-glow: rgba(178, 148, 232, .18);
+}
+
+/* —— 电脑端常驻右栏（固定，始终可操作）—— */
+.aside-col {
+  display: none;
+  width: var(--aside-w); flex: none;
+  padding-top: var(--sp-5);
+}
+.app[data-device='desktop'] .aside-col { display: block; }
+
+.aside-sticky {
+  position: sticky;
+  top: calc(var(--topbar-h) + var(--sp-3));
+  z-index: 20;
+}
+.aside-scroll { padding-bottom: var(--sp-6); }
+
+.ai-dock {
+  border: 1px solid var(--ai-border);
+  border-radius: var(--r-lg);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+  transition: box-shadow var(--t-base), border-color var(--t-base);
+}
+.ai-dock.is-open { box-shadow: var(--shadow-md); border-color: var(--ai-accent); }
+.ai-dock-head {
+  display: flex; align-items: center; gap: var(--sp-2);
+  width: 100%;
+  padding: var(--sp-3);
+  border: none; background: none;
+  text-align: left;
+  color: var(--text-primary);
+  transition: background var(--t-fast);
+}
+.ai-dock-head:hover { background: var(--ai-soft); }
+.ai-dock-icon {
+  flex: none; width: 26px; height: 26px; border-radius: 8px;
+  display: grid; place-items: center;
+  background: var(--ai-accent); color: var(--bg-surface);
+  font-size: 13px;
+}
+.ai-dock-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.ai-dock-title { font-size: var(--fs-sm); font-weight: var(--fw-semibold); }
+.ai-dock-sub { font-size: var(--fs-xs); color: var(--text-tertiary); }
+.ai-dock-chevron { flex: none; color: var(--text-tertiary); font-size: 11px; }
+
+.ai-dock-body {
+  border-top: 1px solid var(--border);
+  max-height: 62vh;
+  overflow-y: auto;
+  padding: var(--sp-3);
+}
+.ai-collapsed-hint {
+  font-size: var(--fs-xs); color: var(--text-tertiary);
+  padding: var(--sp-2) var(--sp-3) var(--sp-3);
+  line-height: var(--lh-normal);
+}
+
+/* —— AI 条目 —— */
+.ai-group { margin-bottom: var(--sp-4); }
+.ai-group:last-child { margin-bottom: 0; }
+.ai-group-head { display: flex; align-items: center; gap: 6px; }
+.ai-group-label { font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--ai-accent); }
+.ai-group-count {
+  margin-left: auto; font-size: 10px;
+  padding: 1px 6px; border-radius: var(--r-pill);
+  background: var(--ai-soft); color: var(--ai-accent);
+}
+.ai-group-desc { margin: 4px 0 var(--sp-2); font-size: var(--fs-xs); color: var(--text-tertiary); line-height: var(--lh-normal); }
+
+.ai-entry {
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--ai-accent);
+  border-radius: var(--r-md);
+  padding: var(--sp-3);
+  margin-bottom: var(--sp-2);
+  background: var(--bg-surface);
+}
+.ai-entry:last-child { margin-bottom: 0; }
+.ai-entry-head { display: flex; align-items: center; gap: 6px; margin-bottom: var(--sp-2); flex-wrap: wrap; }
+.ai-entry-kind {
+  font-size: 10px; padding: 1px 6px; border-radius: var(--r-sm);
+  background: var(--ai-soft); color: var(--ai-accent); font-weight: var(--fw-medium);
+}
+.ai-entry-title { margin: 0; font-size: var(--fs-sm); font-weight: var(--fw-semibold); line-height: var(--lh-tight); }
+.ai-summary { margin: 0 0 var(--sp-2); font-size: var(--fs-sm); color: var(--text-secondary); line-height: var(--lh-normal); }
+
+.ai-effective {
+  background: var(--ai-soft);
+  border-radius: var(--r-sm);
+  padding: var(--sp-2) var(--sp-3);
+  margin-bottom: var(--sp-2);
+}
+.ai-effective-label {
+  display: block; font-size: 10px; color: var(--ai-accent);
+  font-weight: var(--fw-semibold); margin-bottom: 3px;
+}
+.ai-effective p { margin: 0; font-size: var(--fs-sm); line-height: var(--lh-normal); color: var(--text-primary); }
+
+.ai-changes { display: flex; flex-direction: column; gap: 5px; margin-bottom: var(--sp-2); }
+.ai-change {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+  padding: 6px var(--sp-2);
+  border-radius: var(--r-sm);
+  background: var(--bg-sunken);
+  font-size: var(--fs-xs);
+}
+.ai-change.is-changed { background: var(--status-closing-bg); border: 1px solid var(--status-closing-border); }
+.ai-change-field { flex: none; color: var(--text-tertiary); min-width: 64px; }
+.ai-change-flow { display: inline-flex; align-items: center; gap: 6px; }
+.ai-from { color: var(--text-tertiary); text-decoration: line-through; }
+.ai-arrow { color: var(--ai-accent); font-weight: var(--fw-bold); }
+.ai-change.is-changed .ai-to { color: var(--status-closing); font-weight: var(--fw-semibold); }
+.ai-change-note { color: var(--text-tertiary); margin-left: auto; }
+
+.ai-points { margin: 0 0 var(--sp-2); padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
+.ai-point { display: flex; align-items: flex-start; gap: 7px; font-size: var(--fs-sm); line-height: var(--lh-normal); }
+.ai-point-dot { flex: none; width: 6px; height: 6px; border-radius: 50%; margin-top: 7px; background: var(--text-tertiary); }
+.ai-point-danger { color: var(--risk-danger); } .ai-point-danger .ai-point-dot { background: var(--risk-danger); }
+.ai-point-warn { color: var(--risk-warn); } .ai-point-warn .ai-point-dot { background: var(--risk-warn); }
+.ai-point-info { color: var(--text-secondary); }
+
+.ai-advice {
+  font-size: var(--fs-xs); line-height: var(--lh-normal);
+  padding: var(--sp-2); border-radius: var(--r-sm);
+  background: var(--bg-sunken); color: var(--text-secondary);
+  margin-bottom: var(--sp-2);
+}
+.ai-advice b { color: var(--ai-accent); margin-right: 5px; }
+
+.ai-caveats {
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--r-sm);
+  padding: var(--sp-2);
+  margin-bottom: var(--sp-2);
+}
+.ai-caveats-title { font-size: 10px; color: var(--text-tertiary); margin-bottom: 3px; }
+.ai-caveats ul { margin: 0; padding-left: 16px; font-size: var(--fs-xs); color: var(--text-secondary); line-height: var(--lh-normal); }
+
+.ai-sources { font-size: 10px; color: var(--text-tertiary); display: flex; align-items: center; gap: 5px; flex-wrap: wrap; margin-bottom: 6px; }
+.ai-source-chip {
+  padding: 1px 6px; border-radius: var(--r-sm);
+  border: 1px solid var(--border); background: var(--bg-surface);
+  color: var(--brand); font-size: 10px;
+}
+.ai-source-chip:hover { background: var(--brand-soft); }
+
+.ai-entry-foot { display: flex; justify-content: flex-end; }
+.ai-footer-note {
+  font-size: 10px; color: var(--text-tertiary);
+  line-height: var(--lh-normal);
+  padding-top: var(--sp-2); margin-top: var(--sp-2);
+  border-top: 1px solid var(--divider);
+}
+
+/* —— 手机端 AI 悬浮按钮 + 底部抽屉 —— */
+.ai-fab {
+  position: fixed; z-index: 42;
+  right: var(--sp-4);
+  bottom: calc(var(--bottomnav-h) + env(safe-area-inset-bottom, 0px) + 84px);
+  width: 52px; height: 52px; border-radius: 50%;
+  border: 1px solid var(--ai-border);
+  background: var(--bg-surface);
+  color: var(--ai-accent);
+  box-shadow: var(--shadow-lg);
+  display: grid; place-items: center;
+  transition: transform var(--t-fast), background var(--t-fast);
+}
+.ai-fab.is-open { background: var(--ai-accent); color: var(--bg-surface); }
+.ai-fab-icon { font-size: 18px; line-height: 1; }
+.ai-fab-label { font-size: 9px; line-height: 1.2; }
+.ai-fab-badge {
+  position: absolute; top: -3px; right: -3px;
+  min-width: 17px; height: 17px; padding: 0 4px;
+  border-radius: var(--r-pill);
+  background: var(--ai-accent); color: var(--bg-surface);
+  font-size: 10px; line-height: 17px; text-align: center;
+}
+.app[data-device='desktop'] .ai-fab, .app[data-device='desktop'] .ai-sheet,
+.app[data-device='desktop'] .ai-sheet-mask { display: none; }
+
+.ai-sheet-mask { position: fixed; inset: 0; z-index: 110; background: var(--overlay); animation: fade var(--t-base); }
+.ai-sheet {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 111;
+  max-height: 76vh;
+  display: flex; flex-direction: column;
+  background: var(--bg-elevated);
+  border-radius: var(--r-xl) var(--r-xl) 0 0;
+  box-shadow: var(--shadow-lg);
+  animation: slideUp var(--t-base);
+}
+.ai-sheet-head {
+  display: flex; align-items: center; gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4);
+  border-bottom: 1px solid var(--border);
+  flex: none;
+}
+.ai-sheet-title { font-size: var(--fs-md); font-weight: var(--fw-semibold); }
+.ai-sheet-body { padding: var(--sp-3) var(--sp-4) var(--sp-6); overflow-y: auto; }
+
+/* —— 帖子内嵌 AI 区块 —— */
+.ai-embed {
+  border: 1px solid var(--ai-border);
+  border-radius: var(--r-lg);
+  background: var(--bg-surface);
+  margin: var(--sp-5) 0;
+  overflow: hidden;
+}
+.ai-embed-head {
+  display: flex; align-items: center; gap: var(--sp-2);
+  width: 100%; padding: var(--sp-3);
+  border: none; background: none; text-align: left;
+  color: var(--text-primary);
+  transition: background var(--t-fast);
+}
+.ai-embed-head:hover { background: var(--ai-soft); }
+.ai-embed-title { font-size: var(--fs-sm); font-weight: var(--fw-semibold); }
+.ai-embed-count { font-size: var(--fs-xs); color: var(--text-tertiary); }
+.ai-embed-body { border-top: 1px solid var(--border); padding: var(--sp-3); }
+
+/* 详情页质量提示区块：紧随标题，视觉上更醒目 */
+.quality-section {
+  border: 1px solid var(--risk-warn-border);
+  border-radius: var(--r-md);
+  padding: var(--sp-3);
+  background: color-mix(in srgb, var(--risk-warn-bg) 40%, transparent);
+}
+
+/* ============================================================
  *  响应式：桌面端微调
  * ============================================================ */
 
@@ -1195,18 +1505,53 @@ html[data-theme='dark'] {
   .tl-date { position: static; background: none; backdrop-filter: none; }
   .pin-zone { padding: var(--sp-4); }
 
-  /* 1024–1279px：隐藏右栏并收窄侧栏。
+  /* 1024–1279px：隐藏右栏（含 AI 常驻栏）并收窄侧栏。
      原因：侧栏 220 + 主区最小 900 + 右栏 300 ≈ 1420px，
-     在 1024px 窗口下必然横向溢出，表格会被挤到需要横向滚动。
-     三栏布局从 1280px 起才真正放得下。 */
+     在 1024px 窗口下必然横向溢出。
+     此时 AI 模块改用手机端的悬浮按钮 + 抽屉形态，功能不丢失。 */
   .app[data-device='desktop'] { --sidebar-w: 196px; }
-  .app[data-device='desktop'] .aside { display: none; }
+  .app[data-device='desktop'] .aside-col { display: none; }
+  .app[data-device='desktop'] .ai-fab { display: grid; }
+  .app[data-device='desktop'] .ai-sheet,
+  .app[data-device='desktop'] .ai-sheet-mask { display: flex; }
+  .app[data-device='desktop'] .ai-sheet-mask { display: block; }
 }
 
 @media (min-width: 1280px) {
   .app[data-device='desktop'] { --sidebar-w: 220px; }
-  .app[data-device='desktop'] .aside { display: block; }
+  .app[data-device='desktop'] .aside-col { display: block; }
+  .app[data-device='desktop'] .ai-fab { display: none; }
+  .app[data-device='desktop'] .ai-sheet,
+  .app[data-device='desktop'] .ai-sheet-mask { display: none; }
 }
+
+/* 超宽屏：主区与右栏同步加宽，避免中间过窄 */
+@media (min-width: 1600px) {
+  .app[data-device='desktop'] { --container-max: 1560px; --aside-w: 320px; }
+}
+
+/* 尊重用户的"减少动效"偏好 */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}
+
+
+@media (min-width: 640px) {
+  .form-grid-2 { grid-template-columns: 1fr 1fr; }
+  .field-grid { grid-template-columns: 1fr 1fr; }
+  .tool-grid { max-width: 520px; }
+}
+
+@media (min-width: 1024px) {
+  .icon-btn .mode-label { display: inline; font-size: var(--fs-xs); }
+  .icon-btn.with-label { width: auto; padding: 0 var(--sp-3); gap: 5px; grid-auto-flow: column; }
+  .card { padding: var(--sp-4) var(--sp-5); }
+  .fab { width: 56px; height: 56px; }
+  .tl-date { position: static; background: none; backdrop-filter: none; }
+  .pin-zone { padding: var(--sp-4); }
+}
+
+/* 旧规则已删除：右栏统一由 .aside-col 控制，见文件上方 AI 模块与桌面端布局段落 */
 
 /* 超宽屏：主区与右栏同步加宽，避免中间过窄 */
 @media (min-width: 1600px) {

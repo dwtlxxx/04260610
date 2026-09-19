@@ -10,6 +10,7 @@
 import {
   ITEMS, SOURCE, KIND, SOURCE_LABEL, KIND_LABEL, DEMO_ITEMS,
   BOARD, BOARDS, BOARD_MAP, BOARD_KINDS, PIN_LEVEL, PIN_LABEL,
+  AI_ENTRIES, AI_KIND, USE_AI_MODULE, AI_DISCLAIMER, AI_DISCLAIMER_LONG,
 } from './data.js';
 
 /**
@@ -626,6 +627,72 @@ export function tagCloud(list) {
     .map(([tag, count]) => ({ tag, count }))
     .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag, 'zh'));
 }
+
+/* ============================================================
+ * AI 整合模块
+ *
+ * 定位：高层级辅助模块，主页与帖子详情内都可调用。
+ * 约束（务必保持）：
+ *   1. 输出必须带 AI 标注（由视图层统一渲染，数据层提供文案）
+ *   2. 默认折叠，用户点击才展开
+ *   3. 结论必须能追溯到原始条目（entries 里的 sources 字段）
+ * ============================================================ */
+
+/** 是否启用 AI 模块 */
+export function aiEnabled() {
+  return USE_AI_MODULE === true;
+}
+
+/** 取某条信息的 AI 条目（可能同时有整合与质量解读） */
+export function aiEntriesOf(itemId) {
+  if (!aiEnabled()) return [];
+  return AI_ENTRIES.filter((e) => String(e.itemId) === String(itemId));
+}
+
+/** 取某条信息中指定类型的 AI 条目 */
+export function aiEntryOf(itemId, kind) {
+  return aiEntriesOf(itemId).find((e) => e.kind === kind) || null;
+}
+
+/** 是否存在"发生过变更"的整合（用于主页 AI 面板的数量提示） */
+export function aiChangeSummaries(now) {
+  if (!aiEnabled()) return [];
+  return AI_ENTRIES
+    .filter((e) => e.kind === AI_KIND.INTEGRATION)
+    .map((e) => {
+      const changed = (e.changes || []).filter((c) => c.from !== c.to);
+      return { entry: e, changedCount: changed.length, changed };
+    })
+    .filter((x) => x.changedCount > 0);
+}
+
+/** AI 模块总览：主页面板用 */
+export function aiOverview(list, now) {
+  if (!aiEnabled()) return { groups: [], total: 0, changedItems: 0 };
+  const itemsById = new Map(list.map((i) => [String(i.id), i]));
+  const groups = [
+    {
+      kind: AI_KIND.INTEGRATION,
+      label: '官方信息变更整合',
+      desc: '把主通知与补充通知合成一条结论，避免按旧时间行动',
+      entries: AI_ENTRIES.filter((e) => e.kind === AI_KIND.INTEGRATION)
+        .filter((e) => itemsById.has(String(e.itemId))),
+    },
+    {
+      kind: AI_KIND.QUALITY,
+      label: '信息质量解读',
+      desc: '说明这条信息需要注意什么、还缺什么',
+      entries: AI_ENTRIES.filter((e) => e.kind === AI_KIND.QUALITY)
+        .filter((e) => itemsById.has(String(e.itemId))),
+    },
+  ].filter((g) => g.entries.length);
+
+  const total = groups.reduce((n, g) => n + g.entries.length, 0);
+  const changedItems = aiChangeSummaries(now).length;
+  return { groups, total, changedItems, itemsById };
+}
+
+export { AI_KIND, AI_DISCLAIMER, AI_DISCLAIMER_LONG };
 
 
 export function summarize(list) {

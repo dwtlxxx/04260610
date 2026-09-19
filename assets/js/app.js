@@ -26,7 +26,8 @@ import {
 import { renderMobile, renderDesktop } from './views.js';
 
 const MOBILE_MAX = 767;      // <= 767px 视为手机
-const DESKTOP_MIN = 1024;    // >= 1024px 进入三栏桌面布局
+const DESKTOP_MIN = 1024;    // >= 1024px 进入桌面布局
+const WIDE_MIN = 1280;       // >= 1280px 三栏才真正放得下
 
 /* ============================================================
  * 应用状态（单一数据源）
@@ -39,6 +40,8 @@ const state = {
   viewMode: 'auto',              // auto | mobile | desktop
   quick: 'all',                  // 工具宫格快捷筛选
   activeTags: [],                // 已激活的标签
+  timelineScope: 'official',     // 时间线显示范围：official | all | student
+  aiPanel: null,                 // 展开中的 AI 面板：null | dock | sheet | detail
   filters: { keyword: '' },      // 侧栏 / 搜索
   sort: { key: 'smart', dir: 'asc' },
   favorites: [],
@@ -47,6 +50,7 @@ const state = {
   modal: null,                   // { type, id } | null
   totalCount: 0,
   tagCloud: [],
+  isWide: false,                 // 是否达到宽屏（三栏真正放得下）
 };
 
 /* 供 views.js 使用的派生函数 */
@@ -67,8 +71,18 @@ function computeDataset() {
   state.totalCount = all.length;
   state.tagCloud = tagCloud(all);
 
-  // 板块筛选（"全部"与"时间线"都基于全集）
-  let list = itemsOfBoard(all, state.board);
+  // 板块筛选
+  let list;
+  if (state.board === BOARD.TIMELINE) {
+    // 时间线：默认只显示官方信息，可通过范围切换增删来源
+    list = state.timelineScope === 'official'
+      ? all.filter((i) => i.isOfficial)
+      : state.timelineScope === 'student'
+        ? all.filter((i) => !i.isOfficial)
+        : all;
+  } else {
+    list = itemsOfBoard(all, state.board);
+  }
 
   // 快捷筛选
   if (state.quick === 'urgent') list = list.filter((i) => i.status === STATUS.CLOSING);
@@ -120,6 +134,8 @@ const appEl = document.getElementById('app');
 function render() {
   state.now = new Date();
   state.favorites = store.getFavorites();
+  // 响应式底层状态：宽屏信息供视图层决定列数与右栏，避免视图层各自判断
+  state.isWide = window.innerWidth >= WIDE_MIN;
   const dataset = computeDataset();
 
   const html = state.device === 'mobile'
@@ -190,6 +206,14 @@ function detailHTML(item) {
       ${seriesNote(item)}
       ${roleNote(item)}
 
+      <!-- 信息质量提示：按要求移到标题下方、正文上方 -->
+      ${item.risks.length ? h`<div class="section quality-section">
+        <div class="section-title">${ICON.warn} 信息质量提示 <span class="rule"></span>
+          ${item.risks.length} 项</div>
+        ${riskList(item)}
+        <div class="raw-hint">以上为基于题目信息的客观提示，不代表对发布者的判断，请自行核实后再决定。</div>
+      </div>` : ''}
+
       <div class="section">
         <div class="section-title">关键信息 <span class="rule"></span>
           ${completenessMeter(item)}</div>
@@ -197,22 +221,13 @@ function detailHTML(item) {
         ${missingLine(item)}
       </div>
 
-      ${item.risks.length ? h`<div class="section">
-        <div class="section-title">${ICON.warn} 信息质量提示 <span class="rule"></span></div>
-        ${riskList(item)}
-        <div class="raw-hint">以上为基于题目信息的客观提示，不代表对发布者的判断，请自行核实后再决定。</div>
-      </div>` : ''}
-
-      <div class="section">
-        <div class="section-title">题目原文 <span class="rule"></span></div>
-        <div class="raw-box">${esc(item.raw)}</div>
-        <div class="raw-hint">上方结构化字段均来自这段原文。原文未提及的内容一律显示为「未注明」，不做推测补全。</div>
-      </div>
-
       ${item.notes ? h`<div class="section">
         <div class="section-title">需要特别注意 <span class="rule"></span></div>
         <div class="raw-box">${esc(item.notes)}</div>
       </div>` : ''}
+
+      <!-- AI 整合与解读：原文对照与质量解读统一收进这里 -->
+      ${aiInDetail(item, state)}
 
       <div class="section">
         <div class="section-title">${ICON.chat} 提问与留言 <span class="rule"></span>${comments.length} 条</div>
@@ -396,18 +411,11 @@ function handleAction(e, el) {
       e.stopPropagation();
       return;
 
-    case 'close-modal': {
-      // 点击弹层内部不应关闭：只有点遮罩空白处或关闭按钮才关
-      const insideModal = e.target.closest('.modal');
-      const isMaskItself = e.target.classList.contains('modal-mask');
-      if (!isMaskItself && insideModal && !e.target.closest('[data-action="close-modal"]')) {
-        e.stopPropagation();
-        return;
-      }
+    case 'close-modal':
+      // 关闭按钮与遮罩点击都由这里收敛；遮罩空白处由 modalHost 的委托处理
       setState({ modal: null }, { soft: true });
       e.stopPropagation();
       return;
-    }
 
     case 'nav':
       setState({ route: el.dataset.route, modal: null }, { soft: !!state.modal });
@@ -422,11 +430,30 @@ function handleAction(e, el) {
 
     case 'board': {
       const id = el.dataset.id;
-      // 切换板块时清空快捷筛选与标签，避免出现"板块 + 旧筛选"导致的空列表困惑
-      setState({ board: id, route: 'feed', quick: 'all', activeTags: [], modal: null }, { soft: !!state.modal });
+      // 切到时间线时保留当前快捷/标签以外的筛选会导致空列表，
+      // 因此切换视图时清空快捷筛选与标签，只保留关键词。
+      setState({
+        board: id, route: 'feed', quick: 'all', activeTags: [],
+        modal: null, aiPanel: null,
+      }, { soft: !!state.modal });
       window.scrollTo(0, 0);
       return;
     }
+
+    case 'timeline-scope': {
+      setState({ timelineScope: el.dataset.id });
+      return;
+    }
+
+    case 'ai-toggle': {
+      const panel = el.dataset.panel;
+      setState({ aiPanel: state.aiPanel === panel ? null : panel });
+      return;
+    }
+
+    case 'ai-close':
+      setState({ aiPanel: null });
+      return;
 
     case 'tag': {
       const tag = el.dataset.tag;
@@ -551,6 +578,26 @@ function handleAction(e, el) {
 appEl.addEventListener('click', (e) => {
   const el = e.target.closest('[data-action]');
   if (!el || !appEl.contains(el)) return;
+  handleAction(e, el);
+});
+
+/* ============================================================
+ * 弹层事件委托（独立绑定）
+ *
+ * ⚠ 必须单独绑定：弹层挂在 #modal-host（#app 的兄弟节点），
+ *   点击事件不会冒泡到 #app，因此只绑 #app 会导致
+ *   弹层内所有按钮失效（发布、关闭、留言、举报、删除全部点不动）。
+ * ============================================================ */
+const modalHost = document.getElementById('modal-host');
+
+modalHost.addEventListener('click', (e) => {
+  // 点击遮罩空白处 → 关闭（"点击空白处退出"）
+  if (e.target === modalHost.querySelector('.modal-mask') || e.target === modalHost) {
+    setState({ modal: null }, { soft: true });
+    return;
+  }
+  const el = e.target.closest('[data-action]');
+  if (!el || !modalHost.contains(el)) return;
   handleAction(e, el);
 });
 

@@ -133,7 +133,9 @@ if (!loadFail) console.log('  ✓ 全部模块加载成功');
 console.log('');
 console.log('=== 3. 渲染结果检查 ===');
 const html = appEl.innerHTML;
-const isDesktop = Number(process.env.VW || 1440) >= 1024;
+const vw = Number(process.env.VW || 1440);
+const isDesktop = vw >= 1024;
+const isWide = vw >= 1280;
 const checks = [
   ['页面已脱离加载态', !html.includes('正在加载') && html.length > 1000],
   ['未出现致命错误提示', !html.includes('页面加载失败') && !html.includes('启动失败')],
@@ -141,7 +143,10 @@ const checks = [
   isDesktop ? ['表格视图已渲染', /class="dtable"/.test(html)]
             : ['卡片视图已渲染', /class="card /.test(html)],
   ['状态徽章已生成', /badge st-/.test(html)],
-  ['完整度进度条已生成', /meter-fill/.test(html)],
+  // 完整度进度条所在列在窄屏桌面端会被自动隐藏，属预期行为
+  isDesktop && !isWide
+    ? ['窄屏已自动隐藏次要列（完整度）', !/meter-fill/.test(html)]
+    : ['完整度进度条已生成', /meter-fill/.test(html)],
   ['数据已进入列表', /【示例】|蓝桥杯|羽毛球|role-closed/.test(html)],
   // —— 本轮新增功能 ——
   ['官方 / 学生标识已渲染', /off-mark is-official/.test(html) && /off-mark is-student/.test(html)],
@@ -151,7 +156,12 @@ const checks = [
             : ['圆形板块入口已渲染', /board-circles/.test(html) && /board-circle/.test(html)],
   isDesktop ? ['标签栏已渲染', /class="tag-row"/.test(html)]
             : ['工具宫格已渲染', /tool-grid/.test(html) && /tool-item/.test(html)],
-  ['板块头部已渲染', /board-header/.test(html)],
+  ['板块头部已渲染', /board-header|timeline/.test(html)],
+  ['高层级视图切换已渲染', /view-switch/.test(html) && /机会列表/.test(html) && /时间线/.test(html)],
+  // AI 模块：电脑端常驻侧栏（含标注）；手机端折叠时只显示悬浮按钮，展开后才有标注
+  isDesktop
+    ? ['AI 常驻侧栏已渲染且带标注', /ai-dock/.test(html) && /ai-mark/.test(html)]
+    : ['AI 悬浮入口已渲染', /ai-fab/.test(html)],
 ];
 
 // 时间线是独立视图，需单独验证

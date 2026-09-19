@@ -158,6 +158,117 @@ export const PIN_LABEL = {
   [PIN_LEVEL.NOTICE]: '更新提醒',
 };
 
+/* ============================================================
+ * AI 整合模块的数据定义
+ *
+ * 考核要求明确"仅实现效果即可，不用真的接入 AI"。
+ * 因此这里存放的是**预先写好的整合结果**，由界面按需展示。
+ *
+ * 三条铁律（写在代码里，避免后续忘记）：
+ *   1. 所有 AI 输出必须显式标注「AI 生成」，且标注不可被 CSS 隐藏
+ *   2. 非主动点击不触发 —— AI 面板默认折叠，必须用户点击才展开
+ *   3. AI 只做「整理与提示」，不代替用户判断；结论必须能追溯到原始信息
+ *
+ * 覆盖两类内容：
+ *   · integration  官方信息变更整合（把主条目与补充通知合成一条时间线）
+ *   · quality      信息质量解读（原详情页的原文对照与质量提示移到这里）
+ * ============================================================ */
+
+export const AI_KIND = {
+  INTEGRATION: 'integration', // 官方信息变更整合
+  QUALITY: 'quality',         // 信息质量解读
+  AGENDA: 'agenda',           // 个人日程建议
+};
+
+/**
+ * 官方信息变更整合
+ *
+ * 结构说明：
+ *   itemId    关联的条目 id
+ *   changes   变更点数组 [{ field, from, to, note }]
+ *   effective 整合后的结论（一句话说清"现在到底该怎么做"）
+ *   sources   结论来源的原始条目 id（保证可追溯，避免 AI 编造）
+ *   caveats   仍需用户自行确认的点
+ */
+export const AI_INTEGRATIONS = [
+  {
+    id: 'ai-int-1',
+    kind: AI_KIND.INTEGRATION,
+    itemId: 'demo-1',
+    title: '训练营时间地点变更整合',
+    effective: '首次训练已改为 9 月 21 日（周一）19:30，地点改到实验楼 A402；报名截止时间不变，仍为 9 月 24 日 22:00。',
+    changes: [
+      { field: '首次训练时间', from: '9 月 20 日起每周六 19:00', to: '9 月 21 日 19:30', note: '因场地调整' },
+      { field: '训练地点', from: '未注明', to: '实验楼 A402', note: '因场地调整' },
+      { field: '报名截止', from: '9 月 24 日 22:00', to: '9 月 24 日 22:00', note: '未变更' },
+    ],
+    caveats: ['后续每周是否固定为周一，原信息未说明，建议向主办方确认', '「已报名同学无需重复提交」仅适用于此前已报名者'],
+    sources: ['demo-1'],
+    confidence: 'high',
+  },
+  {
+    id: 'ai-int-2',
+    kind: AI_KIND.INTEGRATION,
+    itemId: 'demo-3',
+    title: '竞赛登记录入时间提醒',
+    effective: '校内意向登记截止 9 月 21 日 18:00，不足 48 小时。注意：意向登记不等于提交作品，作品提交另有截止时间。',
+    changes: [
+      { field: '意向登记截止', from: '9 月 21 日 18:00', to: '9 月 21 日 18:00', note: '未变更，但时间紧迫' },
+    ],
+    caveats: ['题目材料未提供作品提交的具体截止时间', '组队人数要求 2—4 人，需自行凑齐'],
+    sources: ['demo-3'],
+    confidence: 'medium',
+  },
+];
+
+/**
+ * 信息质量解读
+ *
+ * 由原「详情页内嵌的质量提示与原文对照」迁移而来。
+ * 内容全部是对原始信息的**客观摘录与提示**，不做真假判断。
+ */
+export const AI_QUALITY = [
+  {
+    id: 'ai-q-1',
+    kind: AI_KIND.QUALITY,
+    itemId: 'demo-2',
+    title: '这条学生自发信息需要注意什么',
+    summary: '该信息由学生个人发布，缺少地点与面向对象，且要求通过平台外的私人方式联系。',
+    points: [
+      { level: 'danger', text: '要求添加私人微信：一旦离开平台沟通，出现问题将无法追溯' },
+      { level: 'warn', text: '未提供地点：线下活动无地点，出发前必须确认' },
+      { level: 'info', text: '费用标注为 AA，但未说明具体金额，建议提前问清' },
+    ],
+    advice: '建议先在留言区提问确认地点与费用，再决定是否参加。',
+    sources: ['demo-2'],
+    confidence: 'high',
+  },
+  {
+    id: 'ai-q-2',
+    kind: AI_KIND.QUALITY,
+    itemId: 'demo-4',
+    title: '资料有效期的处理建议',
+    summary: '该资料长期开放，但当前网盘提取信息有明确有效期。',
+    points: [
+      { level: 'warn', text: '提取信息有效至 9 月 22 日，过期后需等待统一更新' },
+      { level: 'info', text: '建议在有效期内先保存到自己的网盘，避免失效后等待' },
+    ],
+    advice: '建议今天就先转存，不要等到截止前一天。',
+    sources: ['demo-4'],
+    confidence: 'high',
+  },
+];
+
+/** AI 整合与解读的统一入口（界面按条目 id 取用） */
+export const AI_ENTRIES = [...AI_INTEGRATIONS, ...AI_QUALITY];
+
+/** AI 模块是否启用（正式数据接入后可按需关闭） */
+export const USE_AI_MODULE = true;
+
+/** AI 标注文案：集中定义，保证任何位置都带标注 */
+export const AI_DISCLAIMER = 'AI 生成 · 仅供参考';
+export const AI_DISCLAIMER_LONG = '以下内容由 AI 依据题目材料自动整理生成，可能存在偏差，请以原始信息为准。';
+
 /**
  * 字段结构说明（ заполнение 时严格按此结构）
  *   id          数字，题目编号
