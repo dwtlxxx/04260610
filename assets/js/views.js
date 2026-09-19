@@ -3,7 +3,7 @@
  *
  * 同一批数据（来自 logic.js 的派生结果），两种结构：
  *   renderMobile  圆形板块入口 + 工具宫格 + 置顶区 + 信息流 + 底部导航
- *   renderDesktop 板块侧栏 + 置顶面板 + 多列表格/时间线 + 右栏总览
+ *   renderDesktop 板块侧栏 + 置顶面板 + 多列卡片/时间线 + 右栏总览
  *
  * 本版本新增（按需求）：
  *   1. 标签制 + 分板块，官方信息独立成板
@@ -19,6 +19,7 @@ import {
   aiEnabled, aiEntriesOf, aiEntryOf, aiOverview, aiChangeSummaries,
   AI_KIND, AI_DISCLAIMER, AI_DISCLAIMER_LONG,
   relationsOf, hasRelations, diffBetween, RELATION, RELATION_LABEL,
+  risksToAiEntry,
 } from './logic.js';
 import {
   esc, h, ICON, statusBadge, statusClass, credibilityBadge, sourceTag, kindTag,
@@ -34,22 +35,6 @@ import {
 
 export function isMobile(state) {
   return state.device === 'mobile';
-}
-
-/** 表格列：窄屏隐藏次要列，保证核心信息不被挤压（title 为核心列，永不隐藏） */
-export function visibleColumns(state) {
-  const all = [
-    { key: 'title', label: '信息', sortable: false },
-    { key: 'source', label: '来源', sortable: true, wide: true },
-    { key: 'status', label: '状态', sortable: true },
-    { key: 'deadline', label: '报名截止', sortable: true },
-    { key: 'startAt', label: '活动时间', sortable: true, wide: true },
-    { key: 'place', label: '地点', sortable: false, wide: true },
-    { key: 'audience', label: '面向对象', sortable: false, wide: true },
-    { key: 'completeness', label: '完整度', sortable: true, wide: true },
-  ];
-  if (!state.isWide) return all.filter((c) => !c.wide);
-  return all;
 }
 
 /* ============================================================
@@ -111,15 +96,13 @@ export function statsBarHTML(dataset, state) {
 }
 
 /**
- * 电脑端信息流的显示方式切换 + 排序。
- * 默认双列卡片（同屏信息更多、高低错落易扫读）；
- * 需要逐字段横向对比时切到表格。
+ * 电脑端信息流的排序栏。
+ *
+ * 说明：原先这里还有「双列卡片 / 表格」显示方式切换，表格已按反馈移除
+ *      （列多、窄屏需横向滚动、信息冗余）。信息流统一为多列卡片，
+ *      列数由容器宽度决定：≥768px 两列，≥1600px 三列。
  */
 function viewModeBar(state, count) {
-  const modes = [
-    { id: 'cards', label: '双列卡片', icon: '▦', hint: '同屏信息更多，高低错落便于扫读' },
-    { id: 'table', label: '表格', icon: '☰', hint: '逐字段横向对比' },
-  ];
   const sorts = [
     { key: 'smart', label: '智能排序', hint: '最该行动的排在最前' },
     { key: 'deadline', label: '按截止', hint: '报名截止由近到远' },
@@ -127,12 +110,7 @@ function viewModeBar(state, count) {
     { key: 'completeness', label: '按完整度', hint: '信息最完整的靠前' },
   ];
   return h`<div class="viewmode-bar">
-    <span class="viewmode-count">${count} 条</span>
-    <div class="seg" role="group" aria-label="显示方式">
-      ${modes.map((m) => h`<button class="seg-btn ${(state.tableMode ? 'table' : 'cards') === m.id ? 'is-active' : ''}"
-          data-action="view-mode" data-id="${esc(m.id)}" title="${esc(m.hint)}">
-        <span aria-hidden="true">${m.icon}</span>${esc(m.label)}</button>`).join('')}
-    </div>
+    <span class="viewmode-count">${count} 条 · 多列卡片</span>
     <div class="seg" role="group" aria-label="排序方式">
       ${sorts.map((s) => h`<button class="seg-btn ${state.sort.key === s.key ? 'is-active' : ''}"
           data-action="sort" data-key="${esc(s.key)}" title="${esc(s.hint)}">${esc(s.label)}</button>`).join('')}
@@ -140,12 +118,16 @@ function viewModeBar(state, count) {
   </div>`;
 }
 
+/** 把一组条目渲染为多列卡片（电脑端）或单列（手机端）。多处复用。 */
+function cardGrid(items, state) {
+  if (state.device === 'mobile') return items.map((i) => infoCard(i, state)).join('');
+  return h`<div class="feed-grid" data-feed-grid>${items.map((i) => infoCard(i, state)).join('')}</div>`;
+}
+
 /**
- * 信息流内容：电脑端双列卡片（高低落差），手机端单列。
+ * 信息流内容：电脑端多列卡片（高低落差），手机端单列。
  * 供整页渲染与局部刷新（搜索）共用。
- * 电脑端不再默认用大表格 —— 首页标题 + 关键字段已足够，
- * 双列排版同屏信息更多，且高低错落更易扫读；
- * 需要逐字段横向对比时可切到「表格」模式。
+ * 列数由容器宽度决定：≥768px 两列，≥1600px 三列（见 CSS .feed-grid）。
  */
 export function feedSection(state, dataset) {
   const boardId = state.board || BOARD.ALL;
@@ -158,14 +140,7 @@ export function feedSection(state, dataset) {
       : emptyState(state, { filtered: true, hint: '当前时间线只显示官方信息，可切换为「全部来源」。' });
   }
   if (!items.length) return emptyState(state, { filtered: true });
-
-  if (state.device === 'mobile') {
-    return items.map((i) => infoCard(i, state)).join('');
-  }
-  if (state.tableMode) {
-    return h`<div class="table-wrap">${table(state, items)}</div>`;
-  }
-  return h`<div class="feed-grid" data-feed-grid>${items.map((i) => infoCard(i, state)).join('')}</div>`;
+  return cardGrid(items, state);
 }
 
 function statsBar(s) {
@@ -472,17 +447,31 @@ function aiSheet(state, dataset) {
       </div>` : ''}`;
 }
 
-/** 帖子内部的 AI 区块（位于正文之后）
- *  导出原因：详情弹层在 app.js 中渲染，需要跨模块调用本函数。 */
+/**
+ * 帖子内部的 AI 区块（位于正文之后）。
+ *
+ * 内容来源有两部分：
+ *   ① 数据中手写的 AI 条目（AI_ENTRIES）
+ *   ② 由风险规则**自动生成**的质量解读（risksToAiEntry）
+ * 第 ② 项的存在意义：把"建议 / 需谨慎 / 建议确认"这类解读性内容
+ * 从详情页顶部收敛到本模块，使顶部只保留对原文的忠实陈述。
+ *
+ * 导出原因：详情弹层在 app.js 中渲染，需要跨模块调用本函数。
+ */
 export function aiInDetail(item, state) {
-  const entries = aiEntriesOf(item.id);
+  const written = aiEntriesOf(item.id);
+  const auto = risksToAiEntry(item);
+  // 已有手写质量解读时不重复生成，避免同一件事出现两遍
+  const hasWrittenQuality = written.some((e) => e.kind === AI_KIND.QUALITY);
+  const entries = auto && !hasWrittenQuality ? [...written, auto] : written;
   if (!entries.length) return '';
   const open = state.aiPanel === 'detail';
+  const autoCount = entries.filter((e) => String(e.id).startsWith('ai-auto-')).length;
   return h`<section class="ai-embed">
     <button class="ai-embed-head" data-action="ai-toggle" data-panel="detail" aria-expanded="${open}">
       <span class="ai-dock-icon" aria-hidden="true">✦</span>
       <span class="ai-embed-title">AI 整合与解读</span>
-      <span class="ai-embed-count">${entries.length} 条</span>
+      <span class="ai-embed-count">${entries.length} 条${autoCount ? '（含自动生成）' : ''}</span>
       ${aiMark()}
       <span class="ai-dock-chevron" aria-hidden="true">${open ? '▾' : '▸'}</span>
     </button>
@@ -795,17 +784,6 @@ function bottomNav(state) {
  * 桌面端
  * ============================================================ */
 
-const COLUMNS = [
-  { key: 'title', label: '信息', sortable: false },
-  { key: 'source', label: '来源', sortable: true },
-  { key: 'status', label: '状态', sortable: true },
-  { key: 'deadline', label: '报名截止', sortable: true },
-  { key: 'startAt', label: '活动时间', sortable: true },
-  { key: 'place', label: '地点', sortable: false },
-  { key: 'audience', label: '面向对象', sortable: false },
-  { key: 'completeness', label: '完整度', sortable: true },
-];
-
 export function renderDesktop(state, dataset) {
   const s = state.summarize(dataset);
   const boardId = state.board || BOARD.ALL;
@@ -817,9 +795,13 @@ export function renderDesktop(state, dataset) {
     ${state.route === 'feed' ? filterPanel(state) : ''}
   </aside>`;
 
+  // 右栏顺序：紧急提醒 → 我的日程 → AI 整合助手
+  // AI 助手放在最下方（此前在最上方且 sticky 常驻，视觉上抢占了主要内容区）。
+  // 详情弹层内另有 AI 区块，因此右栏下移不影响"帖子内也能用 AI"。
   const aside = h`<div class="aside-scroll">
     ${urgentPanel(state, dataset)}
     ${myPanel(state, dataset)}
+    ${aiDock(state, dataset)}
   </div>`;
 
   let main;
@@ -828,11 +810,11 @@ export function renderDesktop(state, dataset) {
     const mine = dataset.filter((i) => i.isUserPost);
     main = h`<div class="panel">
         <div class="panel-title">${ICON.star} 我的日程<span class="count">${favs.length} 条 · 按截止时间排序</span></div>
-        ${favs.length ? h`<div class="table-wrap">${table(state, favs)}</div>` : emptyState(state, { filtered: false })}
+        ${favs.length ? cardGrid(favs, state) : emptyState(state, { filtered: false })}
       </div>
       <div class="panel">
         <div class="panel-title">${ICON.plus} 我发布的信息<span class="count">${mine.length} 条</span></div>
-        ${mine.length ? h`<div class="table-wrap">${table(state, mine)}</div>`
+        ${mine.length ? cardGrid(mine, state)
           : h`<div class="empty"><div class="empty-desc">还没有发布过信息。点左上「＋ 发布信息」试试。</div></div>`}
       </div>`;
   } else if (state.route === 'about') {
@@ -854,7 +836,6 @@ export function renderDesktop(state, dataset) {
       ${sidebar}
       <div class="main-col">${main}</div>
       <div class="aside-col">
-        <div class="aside-sticky">${aiDock(state, dataset)}</div>
         ${aside}
       </div>
     </div>`;
@@ -959,67 +940,6 @@ function filterPanel(state) {
   </div>`;
 }
 
-function table(state, list) {
-  const sortKey = state.sort.key;
-  const sortDir = state.sort.dir;
-  // 响应式：窄屏隐藏次要列（来源 / 活动时间 / 地点 / 面向对象 / 完整度），保证核心信息不被挤压
-  const cols = visibleColumns(state);
-  const labels = { title: '信息', source: '来源', status: '状态', deadline: '报名截止', startAt: '活动时间', place: '地点', audience: '面向对象', completeness: '完整度' };
-  const show = (k) => cols.some((c) => c.key === k);
-
-  const head = cols.map((c) => {
-    const on = sortKey === c.key;
-    return h`<th class="${c.sortable ? 'sortable' : ''} ${on ? 'is-sorted' : ''}"
-        ${c.sortable ? h`data-action="sort" data-key="${esc(c.key)}"` : ''}>
-      ${esc(c.label)}${on ? h`<span class="sort-ind">${sortDir === 'asc' ? '▲' : '▼'}</span>` : (c.sortable ? '<span class="sort-ind">⇅</span>' : '')}
-    </th>`;
-  }).join('');
-
-  if (!list.length) {
-    return h`<table class="dtable"><thead><tr><th class="col-check"></th>${head}<th></th></tr></thead>
-      <tbody><tr><td colspan="${cols.length + 2}">${emptyState(state, { filtered: true })}</td></tr></tbody></table>`;
-  }
-
-  const rows = list.map((item) => {
-    const fav = state.favorites.includes(item.id);
-    const urgent = item.status === STATUS.CLOSING || item.status === STATUS.STANDBY;
-    const off = isOfficial(item);
-    const deadlineCell = item.deadlineText
-      ? h`<div>${esc(item.deadlineText)}</div><div class="fld-extra">${esc(item.deadlineCountdown || '')}</div>`
-      : '<span class="fld-none">未注明</span>';
-    return h`<tr class="${fav ? 'is-fav' : ''} ${off ? 'is-official' : 'is-student'}"
-        data-id="${esc(item.id)}" data-action="open-detail">
-      <td class="col-check"><input type="checkbox" data-action="select" data-id="${esc(item.id)}" aria-label="选择" /></td>
-      ${show('title') ? h`<td class="t-title">
-        <span class="t-main">${esc(item.title)}</span>
-        <span class="t-sub">
-          ${officialMark(item)}${kindTag(item)}${credibilityBadge(item)}
-          ${item.supplements && item.supplements.length ? h`<span class="src">已更新</span>` : ''}
-        </span>
-      </td>` : ''}
-      ${show('source') ? h`<td class="t-num">${esc(item.org || SOURCE_LABEL[item.source])}</td>` : ''}
-      <td>${statusBadge(item)}</td>
-      ${show('deadline') ? h`<td class="t-num ${urgent ? 't-urgent' : ''}">${deadlineCell}</td>` : ''}
-      ${show('startAt') ? h`<td class="t-num">${item.startText ? esc(item.startText) + (item.recurring ? h`<div class="fld-extra">${esc(item.recurring)}</div>` : '') : '<span class="fld-none">未注明</span>'}</td>` : ''}
-      ${show('place') ? h`<td>${item.place ? esc(item.place) : (item.placeStatus ? h`<span class="t-caution">${esc(item.placeStatus)}</span>` : '<span class="t-none">未注明</span>')}</td>` : ''}
-      ${show('audience') ? h`<td>${item.audience ? esc(item.audience) : '<span class="t-none">未注明</span>'}</td>` : ''}
-      ${show('completeness') ? h`<td>${completenessMeter(item)}</td>` : ''}
-      <td class="t-actions">
-        <button class="btn btn-sm btn-fav ${fav ? 'is-on' : ''}" data-action="toggle-fav" data-id="${esc(item.id)}">
-          ${fav ? '★ 已收藏' : '☆ 收藏'}</button>
-      </td>
-    </tr>`;
-  }).join('');
-
-  return h`<table class="dtable">
-    <thead><tr><th class="col-check"></th>${head}<th></th></tr></thead>
-    <tbody>${rows}</tbody>
-    <tfoot><tr><td colspan="${cols.length + 2}">
-      当前显示 ${list.length} 条　·　点击表头可排序　·　蓝色竖条为官方发布${state.isWide ? '' : '　·　当前窗口较窄，已自动隐藏部分次要列'}
-    </td></tr></tfoot>
-  </table>`;
-}
-
 function urgentPanel(state, dataset) {
   const urgent = itemsOfBoard(dataset, BOARD.ALL)
     .filter((i) => i.status === STATUS.CLOSING || i.status === STATUS.STANDBY);
@@ -1043,7 +963,7 @@ function myPanel(state, dataset) {
         <div class="aside-row-title">${esc(i.title)}</div>
         <div class="fld-extra">${esc(i.deadlineCountdown || i.startCountdown || i.statusLabel)}</div>
       </div>`).join('')
-      : h`<div class="empty-desc">还没有收藏。点表格右侧「☆ 收藏」加入日程。</div>`}
+      : h`<div class="empty-desc">还没有收藏。在卡片上点「收藏」即可加入日程。</div>`}
   </div>`;
 }
 

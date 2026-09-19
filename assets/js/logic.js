@@ -203,8 +203,14 @@ export function completeness(item) {
 /* ============================================================
  * 风险规则引擎 —— 本产品的核心创新点
  *
- * 原则：只输出【客观事实提示】，不替用户下"真假"结论。
- *       目标是降低用户的判断成本，而不是代行判断。
+ * 关键设计（两层分离）：
+ *   fact   —— 客观事实陈述，**只陈述"原文写了什么 / 原文没写什么"**，
+ *             不含任何建议、劝告、判断。用于详情页顶部，忠实呈现原文。
+ *   detail —— 解读与建议（"建议出发前确认""请谨慎核实"…）。
+ *             这类内容属于**分析产物**，因此只在 AI 模块中出现。
+ *
+ * 为什么必须分开：详情页顶部应当忠实显示原文；
+ * 一旦混入"建议…""请谨慎…"，用户就分不清哪句来自原文、哪句是产品推断。
  * ============================================================ */
 
 export const RISK_LEVEL = { INFO: 'info', WARN: 'warn', DANGER: 'danger' };
@@ -218,7 +224,8 @@ export function detectRisks(item) {
       level: RISK_LEVEL.DANGER,
       code: 'OFF_PLATFORM',
       title: '要求添加私人微信',
-      detail: '需通过平台外的私人联系方式获取详情，一旦离开平台将无法追溯，请谨慎核实。',
+      fact: '原文要求通过私人微信获取详情，未提供其他联系方式。',
+      detail: '需通过平台外的私人联系方式获取详情，一旦离开平台将无法追溯。',
     });
   }
 
@@ -228,6 +235,7 @@ export function detectRisks(item) {
       level: RISK_LEVEL.DANGER,
       code: 'PROMO',
       title: '含商家推广或购买链接',
+      fact: '原文正文包含商家优惠介绍与购买链接。',
       detail: '内容指向商家优惠与购买链接，与校园活动的关联性较弱。',
     });
   }
@@ -238,18 +246,22 @@ export function detectRisks(item) {
       level: RISK_LEVEL.WARN,
       code: 'MISMATCH',
       title: '标题与正文内容不一致',
-      detail: '标题为技术交流，正文主要内容为商家优惠，实际内容与标题不符。',
+      fact: '标题为技术交流，正文主要内容为商家优惠。',
+      detail: '标题所写主题与正文主要内容不一致，实际内容与标题不符。',
     });
   }
 
-  // R4 关键信息缺失（对线下活动而言，地点缺失会直接影响能否到场）
+  // R4 关键信息缺失（线下活动缺地点会直接影响能否到场）
   if (!item.place && [KIND.ACTIVITY, KIND.MEETUP, KIND.PROGRAM].includes(item.kind)) {
     flags.push({
       level: RISK_LEVEL.WARN,
       code: 'NO_PLACE',
       title: '未提供地点',
+      fact: item.placeStatus
+        ? `原文未给出具体地点，仅说明地点状态为「${item.placeStatus}」。`
+        : '原文未提供活动地点。',
       detail: item.placeStatus
-        ? `地点状态：${item.placeStatus}。建议出发前向发布者确认。`
+        ? `地点尚未确定（${item.placeStatus}），建议出发前向发布者确认。`
         : '题目信息中未提供活动地点，参加前需自行确认。',
     });
   }
@@ -260,6 +272,7 @@ export function detectRisks(item) {
       level: RISK_LEVEL.INFO,
       code: 'NO_ORG',
       title: '学生个人发布，无机构背书',
+      fact: '原文标注发布方为「学生个人发布」，未提及学校或学院。',
       detail: '该信息由学生个人发布，未经学校或学院审核。',
     });
   }
@@ -270,16 +283,18 @@ export function detectRisks(item) {
       level: RISK_LEVEL.WARN,
       code: 'NO_DEADLINE',
       title: '报名截止时间未注明',
+      fact: '原文未给出报名截止时间。',
       detail: '题目信息未提供报名截止时间，无法判断最晚何时行动。',
     });
   }
 
-  // R7 费用未提供（涉及支出，属于对用户负责的提示）
+  // R7 费用未提供（涉及支出）
   if (item.cost === null && item.kind === KIND.CONTEST) {
     flags.push({
       level: RISK_LEVEL.WARN,
       code: 'NO_COST',
       title: '费用信息未提供',
+      fact: '原文未说明参赛费用。',
       detail: '题目信息未说明参赛费用，报名前建议确认。',
     });
   }
@@ -290,6 +305,7 @@ export function detectRisks(item) {
       level: RISK_LEVEL.WARN,
       code: 'LINK_EXPIRING',
       title: '提取信息有有效期',
+      fact: `原文说明网盘提取信息有效至 ${formatTime(item.linkExpiresAt, { withTime: false })}。`,
       detail: `当前网盘提取信息有效至 ${formatTime(item.linkExpiresAt, { withTime: false })}，过期后需等待统一更新。`,
     });
   }
@@ -771,6 +787,39 @@ export function tagCloud(list) {
     .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag, 'zh'));
 }
 
+/**
+ * 由风险规则结果生成 AI 质量解读条目。
+ *
+ * 用途：题目数据只为少数条目手写了 AI 质量解读；
+ * 其余条目若有风险提示，则在此自动生成一条。
+ * 这样"建议与判断"总能汇聚到 AI 模块，而不是留在详情页顶部。
+ *
+ * 位置说明：本函数是纯数据变换、不碰 DOM，因此放在 logic 层。
+ *          若放在 ui.js 会造成 logic ← ui 的循环依赖。
+ */
+export function risksToAiEntry(item) {
+  if (!item || !item.risks || !item.risks.length) return null;
+  const hasDanger = item.risks.some((r) => r.level === RISK_LEVEL.DANGER);
+  const hasWarn = item.risks.some((r) => r.level === RISK_LEVEL.WARN);
+  const points = item.risks.map((r) => ({
+    level: r.level === RISK_LEVEL.DANGER ? 'danger' : r.level === RISK_LEVEL.WARN ? 'warn' : 'info',
+    text: r.detail || r.fact || r.title,
+  }));
+  const advice = hasDanger
+    ? '建议先在留言区向发布者确认关键信息（地点、主办方、费用），再决定是否参加。'
+    : (hasWarn ? '建议出发或报名前确认上述缺失信息，避免白跑或错过。' : '');
+  return {
+    id: `ai-auto-q-${item.id}`,
+    kind: 'quality',
+    itemId: item.id,
+    title: '这条信息需要注意什么',
+    summary: `共 ${item.risks.length} 项客观提示，其中 ${item.risks.filter((r) => r.level === RISK_LEVEL.DANGER).length} 项为高风险信号。`,
+    points,
+    advice,
+    sources: [String(item.id)],
+  };
+}
+
 /* ============================================================
  * AI 整合模块
  *
@@ -809,10 +858,27 @@ export function aiChangeSummaries(now) {
     .filter((x) => x.changedCount > 0);
 }
 
-/** AI 模块总览：主页面板用 */
+/** AI 模块总览：主页面板用
+ *
+ *  质量解读条目有两个来源：
+ *    ① 数据中手写的（AI_QUALITY）
+ *    ② 由风险规则自动生成的 —— 这样"建议与判断"总能汇总到 AI 面板，
+ *       而不是散落在详情页顶部。
+ */
 export function aiOverview(list, now) {
-  if (!aiEnabled()) return { groups: [], total: 0, changedItems: 0 };
+  if (!aiEnabled()) return { groups: [], total: 0, changedItems: 0, itemsById: {} };
   const itemsById = new Map(list.map((i) => [String(i.id), i]));
+
+  // 自动生成的质量解读：仅针对"有风险提示、但没有手写质量解读"的条目，
+  // 避免同一条信息出现两份解读。
+  const writtenQualityIds = new Set(
+    AI_ENTRIES.filter((e) => e.kind === AI_KIND.QUALITY).map((e) => String(e.itemId)),
+  );
+  const autoQuality = list
+    .filter((i) => i.risks && i.risks.length && !writtenQualityIds.has(String(i.id)))
+    .map((i) => risksToAiEntry(i))
+    .filter(Boolean);
+
   const groups = [
     {
       kind: AI_KIND.INTEGRATION,
@@ -825,8 +891,11 @@ export function aiOverview(list, now) {
       kind: AI_KIND.QUALITY,
       label: '信息质量解读',
       desc: '说明这条信息需要注意什么、还缺什么',
-      entries: AI_ENTRIES.filter((e) => e.kind === AI_KIND.QUALITY)
-        .filter((e) => itemsById.has(String(e.itemId))),
+      entries: [
+        ...AI_ENTRIES.filter((e) => e.kind === AI_KIND.QUALITY)
+          .filter((e) => itemsById.has(String(e.itemId))),
+        ...autoQuality,
+      ],
     },
   ].filter((g) => g.entries.length);
 

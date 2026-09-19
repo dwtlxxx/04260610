@@ -247,16 +247,12 @@ const checks = [
   ['页面已脱离加载态', !html.includes('正在加载') && html.length > 1000],
   ['未出现致命错误提示', !html.includes('页面加载失败') && !html.includes('启动失败')],
   ['顶部栏已渲染', html.includes('校园机会雷达')],
-  // 电脑端信息流默认是双列卡片（feed-grid）；手机端为单列卡片流。
-  // 表格模式需用户手动切换，因此这里不再断言 dtable。
-  isDesktop ? ['双列信息流已渲染', /data-feed-grid/.test(html) && /class="card /.test(html)]
+  // 信息流统一为卡片：电脑端多列（feed-grid），手机端单列。
+  // 表格模式已按反馈移除，因此不再断言 dtable。
+  isDesktop ? ['多列信息流已渲染', /data-feed-grid/.test(html) && /class="card /.test(html)]
             : ['卡片视图已渲染', /class="card /.test(html)],
   ['状态徽章已生成', /badge st-/.test(html)],
-  // 完整度进度条：
-  //   卡片模式（默认）任何宽度都显示完整度条；
-  //   表格模式在窄屏会隐藏"完整度"列（属预期）。
-  isDesktop ? ['完整度进度条已生成（卡片模式）', /meter-fill/.test(html)]
-            : ['完整度进度条已生成', /meter-fill/.test(html)],
+  ['完整度进度条已生成', /meter-fill/.test(html)],
   ['数据已进入列表', /【示例】|蓝桥杯|羽毛球|role-closed/.test(html)],
   ['官方 / 学生标识已渲染', /off-mark is-official/.test(html) && /off-mark is-student/.test(html)],
   ['置顶区已渲染', /pin-zone/.test(html) && /pin-card|pin-notice/.test(html)],
@@ -271,8 +267,9 @@ const checks = [
     ? ['AI 常驻侧栏已渲染且带标注', /ai-dock/.test(html) && /ai-mark/.test(html)]
     : ['AI 悬浮入口已渲染', /ai-fab/.test(html)],
   ...(isDesktop ? [
-    ['显示方式切换栏已渲染', /viewmode-bar/.test(html) && /双列卡片/.test(html)],
+    ['排序栏已渲染', /viewmode-bar/.test(html) && /智能排序/.test(html)],
     ['侧栏开关已渲染', /sidebar-toggle/.test(html)],
+    ['已移除表格切换（按反馈）', !/data-action="view-mode"/.test(html) && !/class="dtable"/.test(html)],
   ] : []),
 ];
 

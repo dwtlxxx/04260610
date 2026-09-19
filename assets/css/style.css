@@ -538,70 +538,8 @@ a:hover { text-decoration: underline; }
 /* ============================================================
  *  桌面端：数据表
  * ============================================================ */
-.table-wrap {
-  background: var(--bg-surface);
-  border: 1px solid var(--border);
-  border-radius: var(--r-lg);
-  overflow: hidden;
-  box-shadow: var(--shadow-sm);
-}
-.dtable { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
-.dtable thead th {
-  position: sticky; top: var(--topbar-h); z-index: 5;
-  background: var(--bg-sunken);
-  color: var(--text-secondary);
-  font-weight: var(--fw-medium);
-  text-align: left;
-  padding: 10px var(--sp-3);
-  border-bottom: 1px solid var(--border);
-  white-space: nowrap;
-  font-size: var(--fs-xs);
-}
-.dtable thead th.sortable { cursor: pointer; user-select: none; }
-.dtable thead th.sortable:hover { color: var(--brand); }
-.dtable thead th .sort-ind { opacity: .45; font-size: 10px; margin-left: 3px; }
-.dtable thead th.is-sorted { color: var(--brand); }
-.dtable thead th.is-sorted .sort-ind { opacity: 1; }
 
-.dtable tbody tr {
-  border-bottom: 1px solid var(--divider);
-  transition: background var(--t-fast);
-  cursor: pointer;
-}
-.dtable tbody tr:last-child { border-bottom: none; }
-.dtable tbody tr:hover { background: var(--bg-hover); }
-.dtable tbody tr.is-fav { background: var(--brand-soft); }
-.dtable tbody tr.is-fav:hover { background: var(--brand-soft); }
-.dtable td {
-  padding: 11px var(--sp-3);
-  vertical-align: middle;
-  color: var(--text-secondary);
-}
-.dtable td.t-title { color: var(--text-primary); }
-.dtable td.t-title .t-main {
-  font-weight: var(--fw-medium);
-  display: block;
-  margin-bottom: 3px;
-  line-height: var(--lh-tight);
-}
-.dtable td.t-title .t-sub {
-  display: flex; flex-wrap: wrap; gap: 5px; align-items: center;
-}
-.dtable td.t-num { font-variant-numeric: tabular-nums; white-space: nowrap; }
-.dtable td.t-actions { text-align: right; white-space: nowrap; }
-.dtable .col-check { width: 38px; }
-.dtable .col-check input { accent-color: var(--brand); width: 15px; height: 15px; cursor: pointer; }
-.dtable td.t-none { color: var(--text-tertiary); font-style: normal; }
-.dtable td.t-urgent { color: var(--status-closing); font-weight: var(--fw-medium); }
-.dtable td.t-caution { color: var(--risk-warn); }
 
-.dtable tfoot td {
-  padding: var(--sp-2) var(--sp-3);
-  background: var(--bg-sunken);
-  border-top: 1px solid var(--border);
-  font-size: var(--fs-xs);
-  color: var(--text-tertiary);
-}
 
 /* ============================================================
  *  按钮
@@ -902,10 +840,7 @@ html[data-theme='dark'] {
 .card.is-official { border-left-width: 4px; border-left-color: var(--official-accent); background: var(--official-soft); }
 .card.is-student { border-left-color: var(--student-accent); }
 
-/* 表格行：官方加强左侧竖条 */
-.dtable tbody tr.is-official td:first-child { box-shadow: inset 3px 0 0 var(--official-accent); }
-.dtable tbody tr.is-student td:first-child { box-shadow: inset 3px 0 0 transparent; }
-.dtable tbody tr.is-official { background: color-mix(in srgb, var(--official-soft) 60%, transparent); }
+/* 卡片：官方加强左侧竖条（原表格行规则已随表格模式移除） */
 
 /* 统计条：官方 / 学生计数 */
 .stat-official b { color: var(--official-accent); }
@@ -1405,11 +1340,6 @@ html[data-theme='dark'] {
 }
 .app[data-device='desktop'] .aside-col { display: block; }
 
-.aside-sticky {
-  position: sticky;
-  top: calc(var(--topbar-h) + var(--sp-3));
-  z-index: 20;
-}
 .aside-scroll { padding-bottom: var(--sp-6); }
 
 .ai-dock {

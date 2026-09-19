@@ -381,7 +381,7 @@ check('主条目生效时间已按补充通知覆盖', merged.startAt === '2026-
 check('主条目生效地点已按补充通知覆盖', merged.place === '实验楼 A402', `实际 ${merged.place}`);
 
 console.log('');
-console.log('=== 13. 侧栏开合与显示方式切换 ===');
+console.log('=== 13. 侧栏开合与排序 ===');
 // 找回首页（第 12 组把弹层打开了）
 click(mkBtn('close-modal'), { onApp: false });
 
@@ -396,24 +396,62 @@ const afterSide = readUI().sidebarCollapsed === true;
 check('侧栏开关会改变并持久化状态', beforeSide !== afterSide,
   `${beforeSide} → ${afterSide}`);
 
-const beforeMode = readUI().tableMode === true;
-click(mkBtn('view-mode', beforeMode ? 'cards' : 'table'));
-check('显示方式切换会持久化', readUI().tableMode !== beforeMode,
-  `${beforeMode} → ${readUI().tableMode}`);
-
-// 表格模式下应渲染 dtable；卡片模式渲染 feed-grid
-click(mkBtn('view-mode', 'table'));
-check('切换为表格模式后渲染表格', /dtable/.test(appEl.innerHTML));
-click(mkBtn('view-mode', 'cards'));
-check('切换回卡片模式后渲染双列信息流', /data-feed-grid/.test(appEl.innerHTML));
-check('默认卡片模式含高低落差容器', /class="feed-grid"/.test(appEl.innerHTML));
-
-// 排序同样是新工具栏的一部分（注意：排序按钮读的是 data-key，不是 data-id）
+// 排序（注意：排序按钮读的是 data-key，不是 data-id）
 const sortBtn = mkBtn('sort');
 sortBtn.dataset.key = 'deadline';
 click(sortBtn);
 check('排序切换已生效', readUI().sort && readUI().sort.key === 'deadline',
   readUI().sort ? `key=${readUI().sort.key}` : '未持久化');
+
+// 表格模式已按反馈移除
+check('已移除表格切换按钮', !/data-action="view-mode"/.test(appEl.innerHTML));
+check('信息流为多列卡片容器', /data-feed-grid|class="feed-grid"/.test(appEl.innerHTML));
+check('页面不再出现表格结构', !/class="dtable"/.test(appEl.innerHTML));
+
+console.log('');
+console.log('=== 14. 详情页顶部只呈现事实、解读归入 AI 模块 ===');
+const uiMod = await import(base + 'ui.js');
+const viewsMod = await import(base + 'views.js');
+const now14 = new Date('2026-09-19T14:30');
+const decoratedAll = logicMod.buildDataset(now14);
+const riskItems = decoratedAll.filter((i) => i.risks && i.risks.length);
+check('存在带风险提示的条目可供验证', riskItems.length > 0, `${riskItems.length} 条`);
+
+// 顶部（fact 模式）：不得出现建议性措辞
+let advisoryInTop = 0;
+for (const it of riskItems) {
+  const txt = uiMod.riskList(it, { mode: 'fact' }).replace(/<[^>]+>/g, ' ');
+  if (/建议|谨慎|请自行|应当|需自行/.test(txt)) advisoryInTop++;
+}
+check('顶部风险区不含任何建议性措辞', advisoryInTop === 0,
+  advisoryInTop ? `${advisoryInTop} 条违规` : '');
+
+// fact 模式必须含事实描述（措辞以"原文…"开头）
+const sampleFact = uiMod.riskList(riskItems[0], { mode: 'fact' }).replace(/<[^>]+>/g, ' ').trim();
+check('顶部风险区包含事实陈述', /原文/.test(sampleFact), sampleFact.slice(0, 36));
+
+// AI 模式：应含解读与建议
+const sampleFull = uiMod.riskList(riskItems[0], { mode: 'full' }).replace(/<[^>]+>/g, ' ').trim();
+check('AI 模式包含解读与建议', sampleFull.length >= sampleFact.length && /建议|谨慎|尚未确定/.test(sampleFull));
+
+// 详情页顶部区块的标题已改为"原文中的客观提示"
+modalHost.innerHTML = '';
+modalHost._cachedSel = {};
+click(mkCard('demo-2'));
+const modal14 = modalHost.innerHTML;
+check('顶部区块标题为「原文中的客观提示」', /原文中的客观提示/.test(modal14));
+check('顶部区块不再自称「信息质量提示」', !/>信息质量提示/.test(modal14));
+check('详情内含 AI 解读区块入口', /ai-embed/.test(modal14));
+
+// 无手写解读但含风险提示的条目，应自动生成 AI 解读
+const autoItems = decoratedAll.filter((i) => i.risks.length && !logicMod.aiEntriesOf(i.id).length);
+if (autoItems.length) {
+  const autoHtml = viewsMod.aiInDetail(autoItems[0], { aiPanel: 'detail' });
+  check('无手写解读的风险条目会生成 AI 解读', /ai-embed/.test(autoHtml) && /建议/.test(autoHtml),
+    `样本 #${autoItems[0].id}`);
+} else {
+  check('无手写解读的风险条目会生成 AI 解读', true, '（本例均已手写，跳过）');
+}
 
 console.log('');
 console.log(`结论：通过 ${pass} 项，失败 ${fail} 项`);

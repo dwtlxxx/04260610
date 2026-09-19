@@ -48,10 +48,8 @@ const state = {
   aiPanel: null,                 // 展开中的 AI 面板：null | dock | sheet | detail
   filters: { keyword: '' },      // 侧栏 / 搜索
   sort: { key: 'smart', dir: 'asc' },
-  tableMode: false,              // 电脑端：false=双列卡片（默认），true=表格
   sidebarCollapsed: false,       // 电脑端：侧栏是否收起
   favorites: [],
-  selected: [],
   now: new Date(),
   modal: null,                   // { type, id } | null
   totalCount: 0,
@@ -276,12 +274,14 @@ function detailHTML(item, allItems, rawItems) {
       ${seriesNote(item)}
       ${roleNote(item)}
 
-      <!-- 信息质量提示：按要求移到标题下方、正文上方 -->
+      <!-- 原文中的客观提示：只陈述"原文写了什么 / 没写什么"，
+           不含建议与判断；解读与建议统一交给下方 AI 模块，
+           避免用户分不清哪句来自原文、哪句是产品推断。 -->
       ${item.risks.length ? h`<div class="section quality-section">
-        <div class="section-title">${ICON.warn} 信息质量提示 <span class="rule"></span>
+        <div class="section-title">${ICON.warn} 原文中的客观提示 <span class="rule"></span>
           ${item.risks.length} 项</div>
-        ${riskList(item)}
-        <div class="raw-hint">以上为基于题目信息的客观提示，不代表对发布者的判断，请自行核实后再决定。</div>
+        ${riskList(item, { mode: 'fact' })}
+        <div class="raw-hint">以上仅为对原文内容的客观归纳，不含主观判断；解读与建议见下方 AI 模块。</div>
       </div>` : ''}
 
       <div class="section">
@@ -457,7 +457,6 @@ function persistUIState() {
     quick: state.quick,
     activeTags: state.activeTags,
     sort: state.sort,
-    tableMode: state.tableMode,
     sidebarCollapsed: state.sidebarCollapsed,
   });
 }
@@ -632,11 +631,6 @@ function handleAction(e, el) {
       return;
     }
 
-    case 'view-mode': {
-      setState({ tableMode: el.dataset.id === 'table' });
-      return;
-    }
-
     case 'sort': {
       const key = el.dataset.key;
       const dir = state.sort.key === key && state.sort.dir === 'asc' ? 'desc' : 'asc';
@@ -644,18 +638,8 @@ function handleAction(e, el) {
       return;
     }
 
-    case 'select': {
-      e.stopPropagation();
-      const id = el.dataset.id;
-      const sel = state.selected.includes(id)
-        ? state.selected.filter((x) => x !== id)
-        : [...state.selected, id];
-      setState({ selected: sel });
-      return;
-    }
-
     case 'reset-filters':
-      setState({ quick: 'all', board: 'all', activeTags: [], filters: { keyword: '' }, selected: [] });
+      setState({ quick: 'all', board: 'all', activeTags: [], filters: { keyword: '' } });
       return;
 
     case 'add-comment': {
@@ -709,7 +693,6 @@ function handleAction(e, el) {
       // 但 state.modal 尚未清空时找不到条目，导致弹层被重新打开。
       state.modal = null;
       store.removeUserItem(el.dataset.id);
-      state.selected = state.selected.filter((x) => x !== el.dataset.id);
       toast('已删除', 'info');
       render();
       renderModal();
@@ -898,7 +881,6 @@ function submitPublish() {
     });
 
     state.modal = null;
-    state.selected = [];
     render();
     renderModal();
     toast('发布成功，已进入信息流', 'success');
@@ -967,7 +949,6 @@ function init() {
     if (prefs.quick) state.quick = prefs.quick;
     if (Array.isArray(prefs.activeTags)) state.activeTags = prefs.activeTags;
     if (prefs.sort && prefs.sort.key) state.sort = prefs.sort;
-    if (typeof prefs.tableMode === 'boolean') state.tableMode = prefs.tableMode;
     if (typeof prefs.sidebarCollapsed === 'boolean') state.sidebarCollapsed = prefs.sidebarCollapsed;
     render();
   } catch (err) {

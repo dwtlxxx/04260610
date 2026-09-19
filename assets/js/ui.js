@@ -106,25 +106,38 @@ export function missingLine(item) {
     未提供：${esc(item.missingFields.join(' · '))}</div>`;
 }
 
-/** 风险提示列表 */
+/** 风险提示图标 */
 const RISK_ICON = {
   [RISK_LEVEL.DANGER]: '!',
   [RISK_LEVEL.WARN]: '!',
   [RISK_LEVEL.INFO]: 'i',
 };
 
-export function riskList(item, { compact = false } = {}) {
-  if (!item.risks.length) return '';
+/**
+ * 风险提示列表
+ *
+ *  mode='fact' —— 只显示客观事实（如"原文未提供活动地点"），用于详情页顶部。
+ *                 刻意不含任何建议或判断，保证顶部忠实呈现原文内容。
+ *  mode='full' —— 显示解读与建议，供 AI 模块使用。
+ *
+ * 这样区分的原因：详情页顶部一旦混入"建议…""请谨慎…"，
+ * 用户就分不清哪句来自原文、哪句是产品推断。
+ */
+export function riskList(item, { compact = false, mode = 'fact' } = {}) {
+  if (!item.risks || !item.risks.length) return '';
   const list = compact ? item.risks.slice(0, 2) : item.risks;
-  const rows = list.map((r) => h`<div class="risk risk-${esc(r.level)}">
+  const rows = list.map((r) => {
+    const body = mode === 'full' ? (r.detail || r.fact || '') : (r.fact || '');
+    return h`<div class="risk risk-${esc(r.level)}">
       <span class="risk-icon" aria-hidden="true">${RISK_ICON[r.level] || 'i'}</span>
       <div class="risk-body">
         <div class="risk-title">${esc(r.title)}</div>
-        ${compact ? '' : h`<div class="risk-detail">${esc(r.detail)}</div>`}
+        ${body ? h`<div class="risk-detail">${esc(body)}</div>` : ''}
       </div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
   const more = compact && item.risks.length > 2
-    ? h`<div class="risk-more">另有 ${item.risks.length - 2} 项提示，展开详情查看</div>` : '';
+    ? h`<div class="risk-more">另有 ${item.risks.length - 2} 项，展开详情查看</div>` : '';
   return h`<div class="risk-list">${rows}${more}</div>`;
 }
 
