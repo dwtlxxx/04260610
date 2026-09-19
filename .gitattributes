@@ -1,0 +1,25 @@
+# 统一换行符：仓库内存 LF，Windows 检出为 CRLF，避免跨平台 diff 噪音
+* text=auto eol=lf
+
+# 二进制文件不做换行转换
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.webp binary
+*.ico  binary
+*.woff binary
+*.woff2 binary
+*.ttf  binary
+*.mp3  binary
+*.mp4  binary
+*.zip  binary
+
+# 明确语言标记（GitHub 统计与高亮）
+*.html linguist-language=HTML
+*.css  linguist-language=CSS
+*.js   linguist-language=JavaScript
+
+# 文档在 Windows 上仍按 CRLF 显示更友好
+*.md text eol=lf
+*.ps1 text eol=crlf
