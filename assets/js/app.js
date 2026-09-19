@@ -12,9 +12,10 @@
  */
 
 import {
-  SOURCE, KIND, SOURCE_LABEL, KIND_LABEL,
+  SOURCE, KIND, SOURCE_LABEL, KIND_LABEL, BOARD, BOARDS,
   buildDataset, visibleItems, smartSort, matchesFilters, summarize,
   parseTime, formatTime, STATUS, STATUS_LABEL,
+  itemsOfBoard, tagCloud, boardsOf,
 } from './logic.js';
 import * as store from './store.js';
 import { initTheme, cycleTheme, getCurrentMode, resolveTheme, THEME_MODE_LABEL } from './theme.js';
@@ -33,18 +34,22 @@ const DESKTOP_MIN = 1024;    // >= 1024px 进入三栏桌面布局
 
 const state = {
   route: 'feed',                 // feed | mine | about
+  board: 'all',                  // 当前板块（见 data.js 的 BOARD）
   device: 'mobile',              // 实际生效的形态
   viewMode: 'auto',              // auto | mobile | desktop
-  quick: 'all',                  // 快捷 chip
-  filters: { keyword: '' },      // 侧栏 / 搜索关键词
+  quick: 'all',                  // 工具宫格快捷筛选
+  activeTags: [],                // 已激活的标签
+  filters: { keyword: '' },      // 侧栏 / 搜索
   sort: { key: 'smart', dir: 'asc' },
   favorites: [],
   selected: [],
   now: new Date(),
   modal: null,                   // { type, id } | null
+  totalCount: 0,
+  tagCloud: [],
 };
 
-/* 供 views.js 使用的派生函数，绑定到 state 上，避免视图层重复 import */
+/* 供 views.js 使用的派生函数 */
 state.summarize = summarize;
 state.getResolvedTheme = resolveTheme;
 Object.defineProperty(state, 'themeModeLabel', {
@@ -55,22 +60,30 @@ Object.defineProperty(state, 'themeModeLabel', {
  * 数据加工
  * ============================================================ */
 
-/** 依据 state 计算最终要展示的列表 */
+/** 依据 state 计算最终要展示的列表（板块 → 快捷筛选 → 标签 → 关键词 → 排序） */
 function computeDataset() {
   const userItems = store.getUserItems();
   const all = buildDataset(state.now, userItems);
-  let list = visibleItems(all);
+  state.totalCount = all.length;
+  state.tagCloud = tagCloud(all);
 
-  // 快捷 chip
+  // 板块筛选（"全部"与"时间线"都基于全集）
+  let list = itemsOfBoard(all, state.board);
+
+  // 快捷筛选
   if (state.quick === 'urgent') list = list.filter((i) => i.status === STATUS.CLOSING);
   else if (state.quick === 'standby') list = list.filter((i) => i.status === STATUS.STANDBY);
   else if (state.quick === 'risk') list = list.filter((i) => i.credibility === 'suspect' || i.risks.length);
   else if (state.quick === 'newbie') list = list.filter((i) => matchesFilters(i, { audience: ['newbie'] }, state.now));
   else if (state.quick === 'today') list = list.filter((i) => matchesFilters(i, { time: ['today'] }, state.now));
-  else if (state.quick === 'student') list = list.filter((i) => i.source === SOURCE.STUDENT);
   else if (state.quick === 'rolling') list = list.filter((i) => i.rolling || i.kind === KIND.RESOURCE);
 
-  // 侧栏筛选 + 搜索
+  // 标签筛选（多标签之间为"或"）
+  if (state.activeTags.length) {
+    list = list.filter((i) => i.tags.some((t) => state.activeTags.includes(t)));
+  }
+
+  // 侧栏筛选 + 关键词
   list = list.filter((i) => matchesFilters(i, state.filters, state.now));
 
   // 排序
@@ -395,6 +408,27 @@ function handleAction(e, el) {
       return;
     }
 
+    case 'board': {
+      const id = el.dataset.id;
+      // 切换板块时清空快捷筛选与标签，避免出现"板块 + 旧筛选"导致的空列表困惑
+      setState({ board: id, route: 'feed', quick: 'all', activeTags: [], modal: null }, { soft: !!state.modal });
+      window.scrollTo(0, 0);
+      return;
+    }
+
+    case 'tag': {
+      const tag = el.dataset.tag;
+      const next = state.activeTags.includes(tag)
+        ? state.activeTags.filter((t) => t !== tag)
+        : [...state.activeTags, tag];
+      setState({ activeTags: next });
+      return;
+    }
+
+    case 'clear-tags':
+      setState({ activeTags: [] });
+      return;
+
     case 'toggle-fav': {
       e.stopPropagation();
       const id = el.dataset.id;
@@ -406,7 +440,12 @@ function handleAction(e, el) {
     }
 
     case 'open-detail': {
-      if (e.target.closest('input,button,select,textarea,a')) return;
+      // 卡片内的按钮 / 输入 / 标签链接优先处理，不触发打开详情
+      if (e.target.closest('input,button,select,textarea,a')) {
+        const nested = e.target.closest('[data-action]');
+        if (nested && nested !== el) { handleAction(e, nested); }
+        return;
+      }
       // 只更新弹层，不整页重渲染，避免列表滚动位置跳动
       setState({ modal: { type: 'detail', id: el.dataset.id } }, { soft: true });
       renderModal();
@@ -453,7 +492,7 @@ function handleAction(e, el) {
     }
 
     case 'reset-filters':
-      setState({ quick: 'all', filters: { keyword: '' }, selected: [] });
+      setState({ quick: 'all', board: 'all', activeTags: [], filters: { keyword: '' }, selected: [] });
       return;
 
     case 'add-comment': {

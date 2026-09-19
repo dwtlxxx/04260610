@@ -143,7 +143,29 @@ const checks = [
   ['状态徽章已生成', /badge st-/.test(html)],
   ['完整度进度条已生成', /meter-fill/.test(html)],
   ['数据已进入列表', /【示例】|蓝桥杯|羽毛球|role-closed/.test(html)],
+  // —— 本轮新增功能 ——
+  ['官方 / 学生标识已渲染', /off-mark is-official/.test(html) && /off-mark is-student/.test(html)],
+  ['置顶区已渲染', /pin-zone/.test(html) && /pin-card|pin-notice/.test(html)],
+  ['置顶理由已显示', /置顶理由：/.test(html)],
+  isDesktop ? ['板块侧栏已渲染', /panel-title">板块/.test(html) || /nav-board-icon/.test(html)]
+            : ['圆形板块入口已渲染', /board-circles/.test(html) && /board-circle/.test(html)],
+  isDesktop ? ['标签栏已渲染', /class="tag-row"/.test(html)]
+            : ['工具宫格已渲染', /tool-grid/.test(html) && /tool-item/.test(html)],
+  ['板块头部已渲染', /board-header/.test(html)],
 ];
+
+// 时间线是独立视图，需单独验证
+process.env.FORCE_TIMELINE = '';
+const timelineOk = await (async () => {
+  try {
+    const logic = await import(pathToFileURL(path.join(jsDir, 'logic.js')).href);
+    const now = new Date('2026-09-19T14:30');
+    const data = logic.buildDataset(now);
+    const groups = logic.buildTimeline(data, now);
+    return groups.length > 0 && groups.every((g) => g.label && Array.isArray(g.items));
+  } catch { return false; }
+})();
+checks.push(['时间线分组可用', timelineOk]);
 
 let renderFail = 0;
 for (const [name, ok] of checks) {

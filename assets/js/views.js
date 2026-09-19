@@ -2,14 +2,20 @@
  * views.js —— 双端视图层
  *
  * 同一批数据（来自 logic.js 的派生结果），两种结构：
- *   renderMobile  卡片流 + 底部 Tab     —— 成熟社交信息流形态，碎片化浏览
- *   renderDesktop 侧栏 + 多列表格 + 右栏 —— 信息密度高，支持排序与比较
+ *   renderMobile  圆形板块入口 + 工具宫格 + 置顶区 + 信息流 + 底部导航
+ *   renderDesktop 板块侧栏 + 置顶面板 + 多列表格/时间线 + 右栏总览
  *
- * 两端共用 ui.js 的所有渲染件，因此状态徽章、风险提示、完整度条完全一致。
+ * 本版本新增（按需求）：
+ *   1. 标签制 + 分板块，官方信息独立成板
+ *   2. 主区域置顶栏目 + 各板块内置顶区域
+ *   3. 时间线信息流
+ *   4. 官方 / 非官方信息的强视觉区分
  */
 
 import {
   STATUS, STATUS_LABEL, KIND_LABEL, SOURCE_LABEL, RISK_LEVEL,
+  BOARD, BOARDS, BOARD_MAP, PIN_LEVEL,
+  itemsOfBoard, featuredPins, boardPins, buildTimeline, isOfficial,
 } from './logic.js';
 import {
   esc, h, ICON, statusBadge, statusClass, credibilityBadge, sourceTag, kindTag,
@@ -21,40 +27,30 @@ import {
  * ============================================================ */
 
 function topbar(state, dataset) {
-  const now = state.now;
-  const res = typeof state.getResolvedTheme === 'function' ? state.getResolvedTheme() : 'light';
   const themeModeLabel = state.themeModeLabel || '跟随系统';
   const deviceLabel = state.device === 'mobile' ? '电脑版' : '手机版';
-
   return h`<header class="topbar">
     <div class="topbar-inner">
       <div class="brand">
         <span class="brand-logo" aria-hidden="true">机</span>
         <span class="brand-text">
           <span class="brand-name">校园机会雷达</span>
-          <span class="brand-sub">珠科 · 26 条信息已整理</span>
+          <span class="brand-sub">珠科 · ${state.totalCount} 条信息已整理</span>
         </span>
       </div>
-
       <div class="topbar-spacer"></div>
-
       <div class="search-wrap">
         <span class="icon">${ICON.search}</span>
         <input class="search-input" type="search" id="search-input"
-               placeholder="搜索活动、招募、地点…"
+               placeholder="搜索活动、招募、地点、标签…"
                value="${esc(state.filters.keyword || '')}" aria-label="搜索" />
       </div>
-
       <button class="icon-btn with-label" data-action="toggle-theme"
-              title="主题：${esc(themeModeLabel)}（点击切换 跟随系统 → 浅色 → 深色）"
-              aria-label="切换主题，当前${esc(themeModeLabel)}">
+              title="主题：${esc(themeModeLabel)}（点击切换）" aria-label="切换主题">
         ${ICON.theme}<span class="mode-label">${esc(themeModeLabel)}</span>
       </button>
-
       <button class="icon-btn" data-action="toggle-device"
-              title="切换到${deviceLabel}" aria-label="切换到${deviceLabel}">
-        ${ICON.device}
-      </button>
+              title="切换到${deviceLabel}" aria-label="切换到${deviceLabel}">${ICON.device}</button>
     </div>
   </header>`;
 }
@@ -62,50 +58,174 @@ function topbar(state, dataset) {
 function statsBar(s) {
   return h`<div class="stats">
     <span class="stat">共 <b>${s.total}</b> 条</span>
+    <span class="stat stat-official">官方 <b>${s.official}</b></span>
+    <span class="stat stat-student">学生自发 <b>${s.student}</b></span>
     <span class="stat is-closing">即将截止 <b>${s.closing}</b></span>
     <span class="stat is-standby">可候补 <b>${s.standby}</b></span>
-    <span class="stat">可报名 <b>${s.open}</b></span>
-    <span class="stat">长期有效 <b>${s.recurring}</b></span>
     ${s.suspect ? h`<span class="stat is-risk">建议核实 <b>${s.suspect}</b></span>` : ''}
   </div>`;
 }
 
-/** 快捷筛选 chips —— 手机端与桌面端共用（桌面端额外有侧栏筛选器） */
-const QUICK_CHIPS = [
-  { id: 'all', label: '全部' },
-  { id: 'urgent', label: '即将截止' },
-  { id: 'standby', label: '可候补' },
-  { id: 'newbie', label: '零基础 / 新生' },
-  { id: 'today', label: '今天' },
-  { id: 'student', label: '学生自发' },
-  { id: 'rolling', label: '长期有效' },
-  { id: 'risk', label: '需核实' },
-];
+/* ============================================================
+ * 置顶区
+ * ============================================================ */
 
-function chipRow(state, dataset) {
-  const s = state.summarize(dataset);
-  const counts = {
-    all: s.total,
-    urgent: s.closing,
-    standby: s.standby,
-    risk: s.suspect,
-  };
-  const chips = QUICK_CHIPS.map((c) => {
-    const on = state.quick === c.id;
-    const n = counts[c.id];
-    return h`<button class="chip ${on ? 'is-active' : ''}" data-action="quick" data-id="${esc(c.id)}">
-      ${esc(c.label)}${n !== undefined ? h` <span class="chip-n">${n}</span>` : ''}
-    </button>`;
-  }).join('');
-  return h`<div class="chip-row">${chips}</div>`;
+/** 主区域置顶：featured 大卡 + notice 通知条 */
+function featuredPanel(state, dataset, { compact = false } = {}) {
+  const pins = featuredPins(dataset, state.now);
+  if (!pins.length) return '';
+  const featured = pins.filter((p) => p.pinLevel === PIN_LEVEL.FEATURED);
+  const notices = pins.filter((p) => p.pinLevel === PIN_LEVEL.NOTICE);
+
+  return h`<section class="pin-zone" aria-label="置顶信息">
+    <div class="pin-zone-head">
+      <span class="pin-icon" aria-hidden="true">▲</span>
+      <span>置顶信息</span>
+      <span class="pin-hint">置顶均有明确理由，用于防止错过或做错</span>
+    </div>
+
+    ${featured.map((item) => h`
+      <div class="pin-card ${item.isOfficial ? 'is-official' : ''}" data-action="open-detail" data-id="${esc(item.id)}">
+        <div class="pin-card-head">
+          ${officialMark(item)}
+          <span class="pin-tag">${esc(item.pinLabel)}</span>
+          ${statusBadge(item)}
+        </div>
+        <h3 class="pin-title">${esc(item.title)}</h3>
+        ${item.pinReason ? h`<div class="pin-reason">置顶理由：${esc(item.pinReason)}</div>` : ''}
+        ${compact ? '' : h`<div class="card-meta">
+          ${item.startText ? h`<span class="meta-item"><span class="icon">${ICON.clock}</span>${esc(item.startText)}</span>` : ''}
+          ${item.place ? h`<span class="meta-item"><span class="icon">${ICON.pin}</span>${esc(item.place)}</span>` : ''}
+          ${item.deadlineText ? h`<span class="meta-item"><span class="icon">${ICON.clock}</span>截止 ${esc(item.deadlineText)} ${esc(item.deadlineCountdown || '')}</span>` : ''}
+        </div>`}
+      </div>`).join('')}
+
+    ${notices.length ? h`<div class="pin-notices">
+      ${notices.map((item) => h`
+        <div class="pin-notice" data-action="open-detail" data-id="${esc(item.id)}">
+          <span class="pin-notice-badge">提醒</span>
+          <span class="pin-notice-text">${esc(item.title)}</span>
+          <span class="pin-notice-reason">${esc(item.pinReason || '')}</span>
+          <span class="pin-notice-arrow" aria-hidden="true">›</span>
+        </div>`).join('')}
+    </div>` : ''}
+  </section>`;
 }
 
-/** 单张卡片主体（列表点击后进入详情） */
+/** 板块内置顶：进入具体板块时显示 */
+function boardPinZone(state, dataset, boardId) {
+  const pins = boardPins(dataset, boardId, state.now);
+  if (!pins.length) return '';
+  return h`<section class="pin-zone pin-zone-board" aria-label="本板块置顶">
+    <div class="pin-zone-head">
+      <span class="pin-icon" aria-hidden="true">▲</span>
+      <span>本板块置顶</span>
+    </div>
+    ${pins.map((item) => h`
+      <div class="pin-notice" data-action="open-detail" data-id="${esc(item.id)}">
+        <span class="pin-notice-badge">置顶</span>
+        <span class="pin-notice-text">${esc(item.title)}</span>
+        ${item.pinReason ? h`<span class="pin-notice-reason">${esc(item.pinReason)}</span>` : ''}
+        <span class="pin-notice-arrow" aria-hidden="true">›</span>
+      </div>`).join('')}
+  </section>`;
+}
+
+/* ============================================================
+ * 官方标识（强区分）
+ * ============================================================ */
+
+/** 官方信息使用醒目的机构标识，非官方使用中性标识 */
+export function officialMark(item) {
+  if (isOfficial(item)) {
+    return h`<span class="off-mark is-official" title="学校或学院正式发布，有机构背书">
+      <span class="off-mark-icon" aria-hidden="true">✓</span>官方
+    </span>`;
+  }
+  return h`<span class="off-mark is-student" title="学生个人发布，未经机构审核">
+    <span class="off-mark-icon" aria-hidden="true">人</span>学生自发
+  </span>`;
+}
+
+/* ============================================================
+ * 板块导航
+ * ============================================================ */
+
+/** 手机端：圆形入口横排（参考所给界面的圆形分区入口） */
+function boardCircles(state, dataset) {
+  const counts = {};
+  for (const b of BOARDS) {
+    if (b.id === BOARD.TIMELINE) continue;
+    counts[b.id] = b.id === BOARD.ALL ? dataset.length : itemsOfBoard(dataset, b.id).length;
+  }
+  return h`<nav class="board-circles" aria-label="板块导航">
+    ${BOARDS.filter((b) => b.id !== BOARD.TIMELINE).map((b) => {
+      const on = state.board === b.id;
+      return h`<button class="board-circle ${on ? 'is-active' : ''} ${b.official ? 'is-official' : ''}"
+          data-action="board" data-id="${esc(b.id)}" aria-current="${on}">
+        <span class="board-circle-icon" aria-hidden="true">${esc(b.icon)}</span>
+        <span class="board-circle-label">${esc(b.short)}</span>
+        <span class="board-circle-count">${counts[b.id] ?? 0}</span>
+      </button>`;
+    }).join('')}
+    <button class="board-circle is-timeline ${state.board === BOARD.TIMELINE ? 'is-active' : ''}"
+        data-action="board" data-id="${BOARD.TIMELINE}">
+      <span class="board-circle-icon" aria-hidden="true">时</span>
+      <span class="board-circle-label">时间线</span>
+      <span class="board-circle-count">${dataset.length}</span>
+    </button>
+  </nav>`;
+}
+
+/** 工具入口宫格（参考所给界面的五宫格） */
+const TOOL_ENTRIES = [
+  { id: 'urgent', label: '即将截止', icon: '⏰', hint: '48 小时内' },
+  { id: 'newbie', label: '新生友好', icon: '🌱', hint: '零基础' },
+  { id: 'standby', label: '可候补', icon: '🎫', hint: '仍可参与' },
+  { id: 'today', label: '今天', icon: '📅', hint: '当天发生' },
+  { id: 'risk', label: '需核实', icon: '⚠', hint: '信息存疑' },
+];
+
+function toolGrid(state) {
+  return h`<nav class="tool-grid" aria-label="快捷入口">
+    ${TOOL_ENTRIES.map((t) => h`<button class="tool-item ${state.quick === t.id ? 'is-active' : ''}"
+        data-action="quick" data-id="${esc(t.id)}">
+      <span class="tool-icon" aria-hidden="true">${t.icon}</span>
+      <span class="tool-label">${esc(t.label)}</span>
+      <span class="tool-hint">${esc(t.hint)}</span>
+    </button>`).join('')}
+  </nav>`;
+}
+
+/** 标签筛选条 */
+function tagRow(state, dataset) {
+  const tags = state.tagCloud || [];
+  if (!tags.length) return '';
+  const top = tags.slice(0, 10);
+  return h`<div class="tag-row">
+    <span class="tag-row-label">标签</span>
+    ${top.map(({ tag, count }) => {
+      const on = state.activeTags.includes(tag);
+      return h`<button class="tag ${on ? 'is-active' : ''}" data-action="tag" data-tag="${esc(tag)}">
+        ${esc(tag)}<span class="tag-n">${count}</span>
+      </button>`;
+    }).join('')}
+    ${state.activeTags.length ? h`<button class="tag tag-clear" data-action="clear-tags">清除标签</button>` : ''}
+  </div>`;
+}
+
+/* ============================================================
+ * 信息卡（区分官方 / 非官方）
+ * ============================================================ */
+
 function infoCard(item, state) {
   const fav = state.favorites.includes(item.id);
   const urgent = item.status === STATUS.CLOSING || item.status === STATUS.STANDBY;
-  return h`<article class="card ${statusClass(item.status)}" data-id="${esc(item.id)}" data-action="open-detail">
+  const off = isOfficial(item);
+  return h`<article class="card ${statusClass(item.status)} ${off ? 'is-official' : 'is-student'}"
+      data-id="${esc(item.id)}" data-action="open-detail">
     <div class="card-top">
+      ${officialMark(item)}
       <div class="card-tags">
         ${sourceTag(item)}${kindTag(item)}${credibilityBadge(item)}
       </div>
@@ -115,15 +235,17 @@ function infoCard(item, state) {
     <h3 class="card-title">${esc(item.title)}</h3>
 
     <div class="card-meta">
-      ${item.startText ? h`<span class="meta-item ${item.startCountdown && item.startCountdown.includes('还有') && urgent ? 'is-urgent' : ''}">
-        <span class="icon">${ICON.clock}</span>${esc(item.startText)}${item.recurring ? h`<span class="fld-extra">${esc(item.recurring)}</span>` : ''}</span>` : ''}
-      ${item.deadlineText ? h`<span class="meta-item ${urgent ? 'is-urgent' : ''}">
-        <span class="icon">${ICON.clock}</span>截止 ${esc(item.deadlineText)}${item.deadlineCountdown ? h` · ${esc(item.deadlineCountdown)}` : ''}</span>` : ''}
+      ${item.startText ? h`<span class="meta-item"><span class="icon">${ICON.clock}</span>${esc(item.startText)}${item.recurring ? h`<span class="fld-extra">${esc(item.recurring)}</span>` : ''}</span>` : ''}
+      ${item.deadlineText ? h`<span class="meta-item ${urgent ? 'is-urgent' : ''}"><span class="icon">${ICON.clock}</span>截止 ${esc(item.deadlineText)}${item.deadlineCountdown ? h` · ${esc(item.deadlineCountdown)}` : ''}</span>` : ''}
       ${item.place ? h`<span class="meta-item"><span class="icon">${ICON.pin}</span>${esc(item.place)}</span>`
         : (item.placeStatus ? h`<span class="meta-item"><span class="icon">${ICON.pin}</span>${esc(item.placeStatus)}</span>` : '')}
       ${item.audience ? h`<span class="meta-item">${esc(item.audience)}</span>` : ''}
       ${item.weeklyHours ? h`<span class="meta-item">每周约 ${item.weeklyHours} 小时</span>` : ''}
     </div>
+
+    ${item.tags && item.tags.length ? h`<div class="card-taglist">
+      ${item.tags.map((t) => h`<button class="tag tag-sm" data-action="tag" data-tag="${esc(t)}">${esc(t)}</button>`).join('')}
+    </div>` : ''}
 
     ${seriesNote(item)}
     ${roleNote(item)}
@@ -134,9 +256,7 @@ function infoCard(item, state) {
       ${completenessMeter(item)}
       <span class="grow"></span>
       <button class="btn-fav ${fav ? 'is-on' : ''}" data-action="toggle-fav" data-id="${esc(item.id)}"
-              aria-pressed="${fav}" title="${fav ? '取消收藏' : '收藏到我的日程'}">
-        ${fav ? ICON.starFill : ICON.star}<span>${fav ? '已收藏' : '收藏'}</span>
-      </button>
+              aria-pressed="${fav}">${fav ? ICON.starFill : ICON.star}<span>${fav ? '已收藏' : '收藏'}</span></button>
     </div>
   </article>`;
 }
@@ -144,10 +264,64 @@ function infoCard(item, state) {
 function emptyState(state, { filtered }) {
   return h`<div class="empty">
     <div class="empty-icon" aria-hidden="true">🔍</div>
-    <div class="empty-title">${filtered ? '没有符合条件的信息' : '还没有收藏任何信息'}</div>
-    <div class="empty-desc">${filtered ? '试着放宽筛选条件，或清空搜索关键词。' : '在信息流里点「收藏」，就会出现在这里，并按截止时间排序。'}</div>
-    ${filtered ? h`<button class="btn" data-action="reset-filters">清空筛选条件</button>`
-      : h`<button class="btn btn-primary" data-action="nav" data-route="feed">去发现机会</button>`}
+    <div class="empty-title">${filtered ? '这个板块暂时没有符合条件的信息' : '还没有收藏任何信息'}</div>
+    <div class="empty-desc">${filtered ? '试着切换板块、清除标签或放宽筛选条件。' : '在信息流里点「收藏」，就会出现在这里，并按截止时间排序。'}</div>
+    ${filtered ? h`<button class="btn" data-action="reset-filters">清空全部筛选</button>` : ''}
+  </div>`;
+}
+
+/** 板块头部说明 */
+function boardHeader(boardId, count) {
+  const b = BOARD_MAP[boardId];
+  if (!b) return '';
+  return h`<div class="board-header ${b.official ? 'is-official' : ''}">
+    <div class="board-header-main">
+      <span class="board-header-icon" aria-hidden="true">${esc(b.icon)}</span>
+      <div>
+        <h2 class="board-header-title">${esc(b.label)}
+          <span class="board-header-count">${count} 条</span>
+          ${b.official ? h`<span class="off-mark is-official"><span class="off-mark-icon">✓</span>仅官方来源</span>` : ''}
+        </h2>
+        <p class="board-header-desc">${esc(b.desc)}</p>
+      </div>
+    </div>
+  </div>`;
+}
+
+/* ============================================================
+ * 时间线视图
+ * ============================================================ */
+
+function timelineView(state, dataset) {
+  const groups = buildTimeline(dataset, state.now);
+  if (!groups.length) return emptyState(state, { filtered: true });
+  return h`<div class="timeline">
+    ${groups.map((g) => h`<section class="tl-group ${g.past ? 'is-past' : ''}">
+      <div class="tl-date">
+        <span class="tl-date-label">${esc(g.label)}</span>
+        <span class="tl-date-sub">${esc(g.key === 'unscheduled' ? '原文未给出明确时间' : g.key)}</span>
+        <span class="tl-date-count">${g.items.length} 条</span>
+      </div>
+      <div class="tl-items">
+        ${g.items.map((item) => h`<div class="tl-item ${isOfficial(item) ? 'is-official' : 'is-student'} ${statusClass(item.status)}"
+            data-action="open-detail" data-id="${esc(item.id)}">
+          <div class="tl-dot" aria-hidden="true"></div>
+          <div class="tl-body">
+            <div class="tl-top">
+              ${officialMark(item)}
+              ${kindTag(item)}
+              ${statusBadge(item)}
+            </div>
+            <div class="tl-title">${esc(item.title)}</div>
+            <div class="tl-meta">
+              ${item.startText ? h`<span>${esc(item.startText)}</span>` : ''}
+              ${item.place ? h`<span>${esc(item.place)}</span>` : (item.placeStatus ? h`<span>${esc(item.placeStatus)}</span>` : '')}
+              ${item.deadlineText ? h`<span>截止 ${esc(item.deadlineText)}</span>` : ''}
+            </div>
+          </div>
+        </div>`).join('')}
+      </div>
+    </section>`).join('')}
   </div>`;
 }
 
@@ -157,13 +331,12 @@ function emptyState(state, { filtered }) {
 
 export function renderMobile(state, dataset) {
   const s = state.summarize(dataset);
-  let body = '';
+  const boardId = state.board || BOARD.ALL;
+  const boardItems = itemsOfBoard(dataset, boardId);
+  const isTimeline = boardId === BOARD.TIMELINE;
 
-  if (state.route === 'feed') {
-    body = h`${chipRow(state, dataset)}
-      ${dataset.length ? dataset.map((i) => infoCard(i, state)).join('')
-        : emptyState(state, { filtered: true })}`;
-  } else if (state.route === 'mine') {
+  let body;
+  if (state.route === 'mine') {
     const favs = dataset.filter((i) => state.favorites.includes(i.id));
     const mine = dataset.filter((i) => i.isUserPost);
     body = h`<div class="section">
@@ -177,16 +350,27 @@ export function renderMobile(state, dataset) {
       </div>`;
   } else if (state.route === 'about') {
     body = aboutPanel(state, dataset);
+  } else {
+    body = h`
+      ${featuredPanel(state, dataset, { compact: true })}
+      ${boardPinZone(state, dataset, boardId)}
+      ${boardHeader(boardId, boardItems.length)}
+      ${isTimeline
+        ? timelineView(state, boardItems)
+        : (boardItems.length ? boardItems.map((i) => infoCard(i, state)).join('') : emptyState(state, { filtered: true }))}`;
   }
 
   return h`${topbar(state, dataset)}
+    ${state.route === 'feed' ? boardCircles(state, dataset) : ''}
+    ${state.route === 'feed' ? toolGrid(state) : ''}
+    ${state.route === 'feed' ? tagRow(state, dataset) : ''}
     <div class="shell">
       <div class="main-col">
         ${state.route === 'feed' ? statsBar(s) : ''}
         ${body}
       </div>
     </div>
-    <button class="fab" data-action="open-publish" title="发布活动或招募" aria-label="发布">${ICON.plus}</button>
+    ${state.route === 'feed' ? h`<button class="fab" data-action="open-publish" aria-label="发布">${ICON.plus}</button>` : ''}
     ${bottomNav(state)}`;
 }
 
@@ -198,9 +382,7 @@ function bottomNav(state) {
   ];
   return h`<nav class="bottomnav" role="navigation">
     ${items.map((it) => h`<button class="nav-item ${state.route === it.route ? 'is-active' : ''}"
-        data-action="nav" data-route="${esc(it.route)}" aria-current="${state.route === it.route}">
-      <span class="icon">${it.icon}</span>${esc(it.label)}
-    </button>`).join('')}
+        data-action="nav" data-route="${esc(it.route)}">${it.icon}${esc(it.label)}</button>`).join('')}
   </nav>`;
 }
 
@@ -221,11 +403,13 @@ const COLUMNS = [
 
 export function renderDesktop(state, dataset) {
   const s = state.summarize(dataset);
-  const view = state.route;
+  const boardId = state.board || BOARD.ALL;
+  const boardItems = itemsOfBoard(dataset, boardId);
+  const isTimeline = boardId === BOARD.TIMELINE;
 
   const sidebar = h`<aside class="sidebar">
-    ${navPanel(state, s)}
-    ${view === 'feed' ? filterPanel(state) : ''}
+    ${boardNavPanel(state, dataset)}
+    ${state.route === 'feed' ? filterPanel(state) : ''}
   </aside>`;
 
   const aside = h`<aside class="aside">
@@ -234,10 +418,8 @@ export function renderDesktop(state, dataset) {
     ${riskPanel(state, dataset)}
   </aside>`;
 
-  let main = '';
-  if (view === 'feed') {
-    main = h`${statsBar(s)}${tablePanel(state, dataset)}`;
-  } else if (view === 'mine') {
+  let main;
+  if (state.route === 'mine') {
     const favs = dataset.filter((i) => state.favorites.includes(i.id));
     const mine = dataset.filter((i) => i.isUserPost);
     main = h`<div class="panel">
@@ -249,8 +431,18 @@ export function renderDesktop(state, dataset) {
         ${mine.length ? h`<div class="table-wrap">${table(state, mine)}</div>`
           : h`<div class="empty"><div class="empty-desc">还没有发布过信息。点左上「＋ 发布信息」试试。</div></div>`}
       </div>`;
-  } else {
+  } else if (state.route === 'about') {
     main = aboutPanel(state, dataset);
+  } else {
+    main = h`
+      ${featuredPanel(state, dataset)}
+      ${tagRow(state, dataset)}
+      ${boardPinZone(state, dataset, boardId)}
+      ${boardHeader(boardId, boardItems.length)}
+      ${statsBar(s)}
+      ${isTimeline
+        ? timelineView(state, boardItems)
+        : h`<div class="table-wrap">${table(state, boardItems)}</div>`}`;
   }
 
   return h`${topbar(state, dataset)}
@@ -261,25 +453,54 @@ export function renderDesktop(state, dataset) {
     </div>`;
 }
 
-function navPanel(state, s) {
-  const items = [
-    { route: 'feed', label: '全部机会', icon: ICON.search, count: s.total, dot: '' },
-    { route: 'mine', label: '我的日程', icon: ICON.star, count: state.favorites.length, dot: '' },
-    { route: 'about', label: '产品说明', icon: ICON.warn, count: '', dot: '' },
-  ];
+function boardNavPanel(state, dataset) {
+  const rows = BOARDS.map((b) => {
+    const count = b.id === BOARD.ALL ? dataset.length
+      : b.id === BOARD.TIMELINE ? dataset.length
+      : itemsOfBoard(dataset, b.id).length;
+    const on = state.route === 'feed' && state.board === b.id;
+    return h`<button class="nav-link ${on ? 'is-active' : ''} ${b.official ? 'is-official' : ''}"
+        data-action="board" data-id="${esc(b.id)}">
+      <span class="nav-board-icon" aria-hidden="true">${esc(b.icon)}</span>
+      <span>${esc(b.label)}</span>
+      <span class="count">${count}</span>
+    </button>`;
+  }).join('');
+
   return h`<div class="panel">
-    <div class="panel-title">导航</div>
+    <div class="panel-title">板块</div>
     <div class="nav-list">
-      ${items.map((it) => h`<button class="nav-link ${state.route === it.route ? 'is-active' : ''}"
-          data-action="nav" data-route="${esc(it.route)}">
-        ${it.icon}<span>${esc(it.label)}</span>${it.count !== '' ? h`<span class="count">${it.count}</span>` : ''}
-      </button>`).join('')}
+      ${rows}
+      <button class="nav-link" data-action="nav" data-route="mine">
+        ${ICON.star}<span>我的日程</span><span class="count">${state.favorites.length}</span>
+      </button>
       <button class="nav-link" data-action="open-publish">${ICON.plus}<span>发布信息</span></button>
     </div>
   </div>`;
 }
 
-/** 桌面端筛选器：平铺展开，不用弹层（这是空间优势） */
+const QUICK_CHIPS = [
+  { id: 'urgent', label: '即将截止' },
+  { id: 'standby', label: '可候补' },
+  { id: 'newbie', label: '零基础 / 新生' },
+  { id: 'today', label: '今天' },
+  { id: 'rolling', label: '长期有效' },
+  { id: 'risk', label: '需核实' },
+];
+
+function chipRow(state, dataset) {
+  const s = state.summarize(dataset);
+  const counts = { urgent: s.closing, standby: s.standby, risk: s.suspect };
+  const chips = QUICK_CHIPS.map((c) => {
+    const on = state.quick === c.id;
+    const n = counts[c.id];
+    return h`<button class="chip ${on ? 'is-active' : ''}" data-action="quick" data-id="${esc(c.id)}">
+      ${esc(c.label)}${n !== undefined ? h` <span class="chip-n">${n}</span>` : ''}
+    </button>`;
+  }).join('');
+  return h`<div class="chip-row">${chips}</div>`;
+}
+
 function filterPanel(state) {
   const f = state.filters;
   const groups = [
@@ -302,7 +523,6 @@ function filterPanel(state) {
       { value: 'rolling', label: '长期有效' },
     ] },
   ];
-
   const html = groups.map((g) => {
     const selected = f[g.key] || [];
     return h`<div class="filter-group">
@@ -312,18 +532,14 @@ function filterPanel(state) {
           const on = selected.includes(o.value);
           return h`<label class="check ${on ? 'is-on' : ''}">
             <input type="checkbox" data-action="filter" data-group="${esc(g.key)}"
-                   value="${esc(o.value)}" ${on ? 'checked' : ''} />
-            <span>${esc(o.label)}</span>
+                   value="${esc(o.value)}" ${on ? 'checked' : ''} /><span>${esc(o.label)}</span>
           </label>`;
         }).join('')}
       </div>
     </div>`;
   }).join('');
-
-  const activeCount = Object.entries(f)
-    .filter(([k]) => k !== 'keyword')
+  const activeCount = Object.entries(f).filter(([k]) => k !== 'keyword')
     .reduce((n, [, v]) => n + (Array.isArray(v) ? v.length : 0), 0);
-
   return h`<div class="panel">
     <div class="panel-title">${ICON.filter} 筛选<span class="count">${activeCount ? activeCount + ' 项生效' : ''}</span></div>
     ${html}
@@ -331,17 +547,9 @@ function filterPanel(state) {
   </div>`;
 }
 
-/** 桌面端多列表格：一屏可见 12-15 条，这是"更全面的信息流"的核心 */
-function tablePanel(state, dataset) {
-  return h`<div class="table-wrap">
-    ${table(state, dataset)}
-  </div>`;
-}
-
 function table(state, list) {
   const sortKey = state.sort.key;
   const sortDir = state.sort.dir;
-
   const head = COLUMNS.map((c) => {
     const on = sortKey === c.key;
     return h`<th class="${c.sortable ? 'sortable' : ''} ${on ? 'is-sorted' : ''}"
@@ -357,23 +565,19 @@ function table(state, list) {
 
   const rows = list.map((item) => {
     const fav = state.favorites.includes(item.id);
-    const sel = state.selected.includes(item.id);
     const urgent = item.status === STATUS.CLOSING || item.status === STATUS.STANDBY;
+    const off = isOfficial(item);
     const deadlineCell = item.deadlineText
       ? h`<div>${esc(item.deadlineText)}</div><div class="fld-extra">${esc(item.deadlineCountdown || '')}</div>`
       : '<span class="fld-none">未注明</span>';
-
-    return h`<tr class="${fav ? 'is-fav' : ''}" data-id="${esc(item.id)}" data-action="open-detail">
-      <td class="col-check" data-action="none">
-        <input type="checkbox" data-action="select" data-id="${esc(item.id)}" ${sel ? 'checked' : ''}
-               aria-label="选择以便对比" />
-      </td>
+    return h`<tr class="${fav ? 'is-fav' : ''} ${off ? 'is-official' : 'is-student'}"
+        data-id="${esc(item.id)}" data-action="open-detail">
+      <td class="col-check"><input type="checkbox" data-action="select" data-id="${esc(item.id)}" aria-label="选择" /></td>
       <td class="t-title">
         <span class="t-main">${esc(item.title)}</span>
         <span class="t-sub">
-          ${kindTag(item)}${credibilityBadge(item)}
+          ${officialMark(item)}${kindTag(item)}${credibilityBadge(item)}
           ${item.supplements && item.supplements.length ? h`<span class="src">已更新</span>` : ''}
-          ${item.isUserPost ? h`<span class="src student">我发布的</span>` : ''}
         </span>
       </td>
       <td class="t-num">${esc(item.org || SOURCE_LABEL[item.source])}</td>
@@ -384,116 +588,93 @@ function table(state, list) {
       <td>${item.audience ? esc(item.audience) : '<span class="t-none">未注明</span>'}</td>
       <td>${completenessMeter(item)}</td>
       <td class="t-actions">
-        <button class="btn btn-sm btn-fav ${fav ? 'is-on' : ''}" data-action="toggle-fav" data-id="${esc(item.id)}"
-                title="${fav ? '取消收藏' : '收藏'}">${fav ? '★ 已收藏' : '☆ 收藏'}</button>
+        <button class="btn btn-sm btn-fav ${fav ? 'is-on' : ''}" data-action="toggle-fav" data-id="${esc(item.id)}">
+          ${fav ? '★ 已收藏' : '☆ 收藏'}</button>
       </td>
     </tr>`;
   }).join('');
 
-  const foot = h`<tfoot><tr><td colspan="${COLUMNS.length + 2}">
-    当前显示 ${list.length} 条　·　点击「来源 / 状态 / 报名截止 / 活动时间 / 完整度」表头可排序
-    ${state.selected.length ? h`　·　已勾选 ${state.selected.length} 条` : ''}
-  </td></tr></tfoot>`;
-
   return h`<table class="dtable">
     <thead><tr><th class="col-check"></th>${head}<th></th></tr></thead>
     <tbody>${rows}</tbody>
-    ${foot}
+    <tfoot><tr><td colspan="${COLUMNS.length + 2}">
+      当前显示 ${list.length} 条　·　点击表头可排序　·　左侧蓝色竖条为官方发布
+    </td></tr></tfoot>
   </table>`;
 }
 
-/** 右栏：紧急提醒 */
 function urgentPanel(state, dataset) {
-  const urgent = dataset
-    .filter((i) => i.status === STATUS.CLOSING || i.status === STATUS.STANDBY)
-    .sort((a, b) => (a.status === STATUS.CLOSING ? -1 : 1) - (b.status === STATUS.CLOSING ? -1 : 1));
+  const urgent = itemsOfBoard(dataset, BOARD.ALL)
+    .filter((i) => i.status === STATUS.CLOSING || i.status === STATUS.STANDBY);
   return h`<div class="panel">
     <div class="panel-title">${ICON.clock} 紧急提醒<span class="count">${urgent.length} 项</span></div>
     ${urgent.length ? urgent.slice(0, 5).map((i) => h`
-      <div style="padding:8px 0;border-bottom:1px solid var(--divider);cursor:pointer"
-           data-action="open-detail" data-id="${esc(i.id)}">
-        <div style="font-size:var(--fs-sm);font-weight:var(--fw-medium);margin-bottom:3px">${esc(i.title)}</div>
+      <div class="aside-row" data-action="open-detail" data-id="${esc(i.id)}">
+        <div class="aside-row-title">${esc(i.title)}</div>
         ${statusBadge(i)}
       </div>`).join('')
       : h`<div class="empty-desc">暂无 48 小时内截止或可候补的信息。</div>`}
   </div>`;
 }
 
-/** 右栏：我的日程 */
 function myPanel(state, dataset) {
   const favs = dataset.filter((i) => state.favorites.includes(i.id));
   return h`<div class="panel">
     <div class="panel-title">${ICON.star} 我的日程<span class="count">${favs.length} 条</span></div>
     ${favs.length ? favs.slice(0, 4).map((i) => h`
-      <div style="padding:7px 0;border-bottom:1px solid var(--divider);cursor:pointer"
-           data-action="open-detail" data-id="${esc(i.id)}">
-        <div style="font-size:var(--fs-sm);margin-bottom:2px">${esc(i.title)}</div>
+      <div class="aside-row" data-action="open-detail" data-id="${esc(i.id)}">
+        <div class="aside-row-title">${esc(i.title)}</div>
         <div class="fld-extra">${esc(i.deadlineCountdown || i.startCountdown || i.statusLabel)}</div>
       </div>`).join('')
       : h`<div class="empty-desc">还没有收藏。点表格右侧「☆ 收藏」加入日程。</div>`}
   </div>`;
 }
 
-/** 右栏：待核实信息 —— 这是本产品区别于普通信息流的地方 */
 function riskPanel(state, dataset) {
-  const risky = dataset.filter((i) => i.risks.length);
+  const risky = itemsOfBoard(dataset, BOARD.ALL).filter((i) => i.risks.length);
   const suspect = risky.filter((i) => i.credibility === 'suspect');
   return h`<div class="panel">
     <div class="panel-title">${ICON.warn} 信息质量提示<span class="count">${risky.length} 条</span></div>
     <div class="empty-desc" style="margin-bottom:8px">
-      其中 <b style="color:var(--risk-danger)">${suspect.length}</b> 条存在明显异常信号。这些信息<b>仍会展示</b>（保证开放发布），
-      但已标注问题，请自行核实后再决定。
+      其中 <b style="color:var(--risk-danger)">${suspect.length}</b> 条存在明显异常信号。
+      这些信息<b>仍会展示</b>（保证开放发布），但已标注问题。
     </div>
-    ${suspect.map((i) => h`<div style="padding:7px 0;border-bottom:1px solid var(--divider);cursor:pointer"
-        data-action="open-detail" data-id="${esc(i.id)}">
-      <div style="font-size:var(--fs-sm);margin-bottom:3px">${esc(i.title)}</div>
-      <div class="risk-list">${riskList(i, { compact: true })}</div>
+    ${suspect.map((i) => h`<div class="aside-row" data-action="open-detail" data-id="${esc(i.id)}">
+      <div class="aside-row-title">${esc(i.title)}</div>
+      ${riskList(i, { compact: true })}
     </div>`).join('')}
-    <button class="btn btn-sm btn-block" data-action="quick" data-id="risk" style="margin-top:10px">
-      只看需核实的信息
-    </button>
+    <button class="btn btn-sm btn-block" data-action="quick" data-id="risk" style="margin-top:10px">只看需核实的信息</button>
   </div>`;
 }
-
-/* ============================================================
- * 产品说明（两端共用）
- * ============================================================ */
 
 function aboutPanel(state, dataset) {
   const s = state.summarize(dataset);
   return h`<div class="panel">
     <div class="panel-title">这个产品解决什么问题</div>
     <p style="margin:0 0 14px;line-height:var(--lh-loose)">
-      题目给出的 26 条校园信息，存在四类真实麻烦：<b>来源不同</b>（校级 / 院级 / 学生自发）、
+      题目给出的信息存在四类真实麻烦：<b>来源不同</b>（校级 / 院级 / 学生自发）、
       <b>字段残缺</b>（报名时间未注明、费用未提供、地点待定）、<b>状态特殊</b>
-      （已结束但会传回放、已截止但可候补、长期招募无截止）、
-      <b>质量参差</b>（个别内容夹杂推广，甚至要求加私人微信）。
+      （已结束但会传回放、已截止但可候补、长期招募无截止）、<b>质量参差</b>
+      （个别内容夹杂推广，甚至要求加私人微信）。
       本产品不做"信息展示"，而是把这些信息整理成<b>能直接判断和行动</b>的决策面板。
     </p>
-
-    <div class="panel-title">本产品的核心能力</div>
-    <div class="field-grid" style="margin-bottom:14px">
-      <div class="fld"><div class="fld-k">状态推导</div><div class="fld-v">不按"日期过了 = 没用"处理，自动区分「可候补」「待回放」「长期有效」</div></div>
-      <div class="fld"><div class="fld-k">系列合并</div><div class="fld-v">01+09、03+20 自动合并，只显示生效后的时间地点，避免跑错</div></div>
-      <div class="fld"><div class="fld-k">风险提示</div><div class="fld-v">识别"加私人微信""购买链接""标题与正文不符"等信号，给提示不下判决</div></div>
-      <div class="fld"><div class="fld-k">完整度</div><div class="fld-v">量化每条信息的字段完整度，缺什么直接列出，不编造不掩盖</div></div>
-    </div>
-
+    <div class="panel-title">组织方式</div>
+    <p style="margin:0 0 14px;line-height:var(--lh-loose);font-size:var(--fs-sm);color:var(--text-secondary)">
+      采用<b>标签制 + 分板块</b>：<b>官方发布独立成板</b>，与竞赛 / 学习资源 / 招募 / 校园活动 / 学生自发并列；
+      每条信息同时携带主题标签，可跨板块按标签筛选。另设<b>时间线</b>视图，按事情发生的时间排列。
+      官方信息在界面上有统一且更强的视觉标识（蓝色竖条 + 「官方」徽章），学生自发使用中性标识。
+    </p>
+    <div class="panel-title">置顶机制</div>
+    <p style="margin:0 0 14px;line-height:var(--lh-loose);font-size:var(--fs-sm);color:var(--text-secondary)">
+      主区域与各板块均设置顶栏目。<b>置顶必须填写理由</b>，且支持到期自动失效——
+      它是"防止错过或做错"的功能，不是运营位。
+    </p>
     <div class="panel-title">当前数据概览</div>
     <div class="stats" style="padding:0">
       <span class="stat">共 <b>${s.total}</b> 条</span>
-      <span class="stat is-closing">即将截止 <b>${s.closing}</b></span>
-      <span class="stat is-standby">可候补 <b>${s.standby}</b></span>
+      <span class="stat stat-official">官方 <b>${s.official}</b></span>
+      <span class="stat stat-student">学生自发 <b>${s.student}</b></span>
       <span class="stat is-risk">建议核实 <b>${s.suspect}</b></span>
-      <span class="stat">含提示 <b>${s.needCheck}</b></span>
     </div>
-
-    <div class="panel-title" style="margin-top:18px">双端与主题</div>
-    <p style="margin:0;line-height:var(--lh-loose);color:var(--text-secondary);font-size:var(--fs-sm)">
-      手机端采用卡片流 + 底部导航，适合碎片化浏览；
-      电脑端采用侧栏 + 多列表格 + 右栏总览，一屏可见 10 条以上并支持排序，信息密度更高。
-      两端共用同一套数据与判定逻辑，收藏与发布内容完全同步。
-      主题默认跟随系统，可手动切换 跟随系统 / 浅色 / 深色。
-    </p>
   </div>`;
 }

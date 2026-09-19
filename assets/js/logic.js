@@ -7,7 +7,10 @@
  * 两端（手机 / 电脑）共用本层，因此"可候补""快截止"等判定在两种形态下完全一致。
  */
 
-import { ITEMS, SOURCE, KIND, SOURCE_LABEL, KIND_LABEL, DEMO_ITEMS } from './data.js';
+import {
+  ITEMS, SOURCE, KIND, SOURCE_LABEL, KIND_LABEL, DEMO_ITEMS,
+  BOARD, BOARDS, BOARD_MAP, BOARD_KINDS, PIN_LEVEL, PIN_LABEL,
+} from './data.js';
 
 /**
  * 是否启用演示数据。
@@ -462,11 +465,161 @@ export function matchesFilters(item, filters, now) {
 }
 
 /* ============================================================
- * 统计面板（电脑端侧栏 / 手机端顶栏用）
+ * 板块归属 —— 把官方信息独立出来
+ *
+ * 判定顺序：
+ *   1. 条目可用 boards 字段手动指定（一条信息可同时属于多个板块，
+ *      例如"校级发布的竞赛"同时进入【官方发布】与【竞赛训练营】）
+ *   2. 未指定时按规则自动归板：
+ *      · source 为校级 / 院级  → 官方发布
+ *      · 其余按 kind 归入对应板块
  * ============================================================ */
 
+export function boardsOf(item) {
+  const set = new Set();
+  if (Array.isArray(item.boards) && item.boards.length) {
+    item.boards.forEach((b) => set.add(b));
+  } else {
+    if (item.source === SOURCE.SCHOOL || item.source === SOURCE.COLLEGE) set.add(BOARD.OFFICIAL);
+    for (const [boardId, kinds] of Object.entries(BOARD_KINDS)) {
+      if (!kinds) continue;
+      if (kinds.includes(item.kind)) set.add(boardId);
+    }
+    if (item.source === SOURCE.STUDENT && item.kind === KIND.MEETUP) set.add(BOARD.STUDENT);
+  }
+  // 官方板块始终额外成立（保证"官方信息独立成板"这一要求不被手动 boards 破坏）
+  if (item.source === SOURCE.SCHOOL || item.source === SOURCE.COLLEGE) set.add(BOARD.OFFICIAL);
+  return [...set];
+}
+
+/** 是否为官方来源（校级 / 院级），界面上用于强区分 */
+export function isOfficial(item) {
+  return item.source === SOURCE.SCHOOL || item.source === SOURCE.COLLEGE;
+}
+
+export function itemsOfBoard(list, boardId) {
+  if (boardId === BOARD.ALL) return list;
+  if (boardId === BOARD.TIMELINE) return list;
+  return list.filter((i) => (i.boardIds || boardsOf(i)).includes(boardId));
+}
+
+/* ============================================================
+ * 置顶
+ *
+ * 置顶必须有理由（pin.reason 必填），且支持 until 到期自动失效。
+ * 这样置顶是"防止用户做错事"的功能，而不是运营位。
+ * ============================================================ */
+
+export function isPinActive(item, now) {
+  const pin = item.pin;
+  if (!pin) return false;
+  if (pin.until) {
+    const until = parseTime(pin.until);
+    if (until && until.getTime() < now.getTime()) return false;
+  }
+  return true;
+}
+
+/** 取出某一层级的置顶条目 */
+export function pinsOf(list, level, now) {
+  return list.filter((i) => isPinActive(i, now) && i.pin && (!level || i.pin.level === level));
+}
+
+/** 主区域置顶（featured + notice），按级别排序 */
+export function featuredPins(list, now) {
+  const order = { [PIN_LEVEL.FEATURED]: 0, [PIN_LEVEL.NOTICE]: 1, [PIN_LEVEL.BOARD]: 2 };
+  return list
+    .filter((i) => isPinActive(i, now) && i.pin)
+    .sort((a, b) => (order[a.pin.level] ?? 9) - (order[b.pin.level] ?? 9));
+}
+
+/** 某板块内的置顶条目 */
+export function boardPins(list, boardId, now) {
+  return itemsOfBoard(list, boardId).filter((i) => isPinActive(i, now) && i.pin);
+}
+
+/* ============================================================
+ * 时间线
+ *
+ * 与主列表（按紧迫度排序）不同，时间线按"事情什么时候发生"排列，
+ * 用于回答"这周/今天有哪些事"这类问题。
+ * ============================================================ */
+
+function dateKeyOf(item) {
+  const t = parseTime(item.startAt) || parseTime(item.deadline) || parseTime(item.linkExpiresAt);
+  if (!t) return 'unscheduled';
+  return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`;
+}
+
+function dateLabelOf(key, now) {
+  if (key === 'unscheduled') return '时间未定';
+  const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  if (key === todayKey) return '今天';
+  const [y, m, d] = key.split('-').map(Number);
+  const that = new Date(y, m - 1, d);
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const diffDays = Math.round((that.getTime() - today.getTime()) / (24 * HOUR));
+  if (diffDays === 1) return '明天';
+  if (diffDays === 2) return '后天';
+  if (diffDays < 0) return `${m}月${d}日（已过）`;
+  return `${m}月${d}日`;
+}
+
+/** 按日期分组，返回 [{ key, label, past, items }] */
+export function buildTimeline(list, now) {
+  const groups = new Map();
+  for (const item of list) {
+    const key = dateKeyOf(item);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(item);
+  }
+  const rows = [...groups.entries()].map(([key, items]) => {
+    let past = false;
+    if (key !== 'unscheduled') {
+      const [y, m, d] = key.split('-').map(Number);
+      past = new Date(y, m - 1, d + 1).getTime() <= now.getTime();
+    }
+    return {
+      key,
+      label: dateLabelOf(key, now),
+      past,
+      items: items.sort((a, b) => {
+        const ta = parseTime(a.startAt)?.getTime() ?? Infinity;
+        const tb = parseTime(b.startAt)?.getTime() ?? Infinity;
+        return ta - tb;
+      }),
+    };
+  });
+  // 时间未定放最后；其余按日期先后
+  rows.sort((a, b) => {
+    if (a.key === 'unscheduled') return 1;
+    if (b.key === 'unscheduled') return -1;
+    return a.key < b.key ? -1 : 1;
+  });
+  return rows;
+}
+
+/* ============================================================
+ * 标签
+ * ============================================================ */
+
+/** 统计列表中出现过的标签及数量，用于标签筛选入口 */
+export function tagCloud(list) {
+  const map = new Map();
+  for (const item of list) {
+    for (const t of item.tags || []) map.set(t, (map.get(t) || 0) + 1);
+  }
+  return [...map.entries()]
+    .map(([tag, count]) => ({ tag, count }))
+    .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag, 'zh'));
+}
+
+
 export function summarize(list) {
-  const s = { total: list.length, closing: 0, standby: 0, open: 0, recurring: 0, suspect: 0, needCheck: 0 };
+  const s = {
+    total: list.length, closing: 0, standby: 0, open: 0, recurring: 0,
+    suspect: 0, needCheck: 0, official: 0, student: 0, pinned: 0,
+  };
   for (const i of list) {
     if (i.status === STATUS.CLOSING) s.closing++;
     else if (i.status === STATUS.STANDBY) s.standby++;
@@ -474,6 +627,9 @@ export function summarize(list) {
     else if (i.status === STATUS.RECURRING) s.recurring++;
     if (i.credibility === 'suspect') s.suspect++;
     if (i.risks && i.risks.length) s.needCheck++;
+    if (i.source === SOURCE.SCHOOL || i.source === SOURCE.COLLEGE) s.official++;
+    else s.student++;
+    if (i.pinActive) s.pinned++;
   }
   return s;
 }
@@ -487,6 +643,9 @@ export function decorate(item, now) {
   const status = deriveStatus(item, now);
   const risks = detectRisks(item);
   const { score, missing } = completeness(item);
+  const cred = credibility(item, risks);
+  const boardIds = boardsOf(item);
+  const pinActive = isPinActive(item, now);
   return {
     ...item,
     status,
@@ -494,13 +653,23 @@ export function decorate(item, now) {
     risks,
     completeness: score,
     missingFields: missing,
-    credibility: credibility(item, risks),
-    credibilityLabel: CREDIBILITY_LABEL[credibility(item, risks)],
+    credibility: cred,
+    credibilityLabel: CREDIBILITY_LABEL[cred],
     deadlineCountdown: humanizeDelta(item.deadline, now),
     startCountdown: humanizeDelta(item.startAt, now),
     deadlineText: formatTime(item.deadline),
     startText: formatTime(item.startAt),
     linkExpiresCountdown: humanizeDelta(item.linkExpiresAt, now),
+    // 板块与置顶
+    boardIds,
+    boards: boardIds.map((id) => BOARD_MAP[id]).filter(Boolean),
+    isOfficial: isOfficial(item),
+    pinActive,
+    pinLevel: pinActive && item.pin ? item.pin.level : null,
+    pinLabel: pinActive && item.pin ? PIN_LABEL[item.pin.level] : null,
+    pinReason: pinActive && item.pin ? item.pin.reason : null,
+    // 标签
+    tags: item.tags || [],
   };
 }
 
@@ -513,3 +682,7 @@ export function buildDataset(now, extraItems = []) {
 }
 
 export { SOURCE, KIND, SOURCE_LABEL, KIND_LABEL };
+
+/* 第四步：把板块 / 置顶相关的常量一并转发给视图层，
+   使视图层只需 import 本模块，无需直接依赖 data.js（降低耦合） */
+export { BOARD, BOARDS, BOARD_MAP, BOARD_KINDS, PIN_LEVEL, PIN_LABEL };
