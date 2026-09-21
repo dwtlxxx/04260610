@@ -26,6 +26,37 @@ body {
   transition: background var(--t-base), color var(--t-base);
 }
 
+/* ============================================================
+ *  页面底部色带
+ *
+ *  做法：用 body::before 画一条固定在视口底部的渐变（透明 → 品牌色与页面底色的混合色），
+ *  放在 z-index:-1 —— 也就是【内容之下、画布底色之上】。
+ *
+ *  为什么不用"给 body 加渐变背景"：长页面里渐变会按整页高度铺开，
+ *  只有滚到最底部才看得到，等于没做。
+ *  为什么放在内容之下而不是盖一层固定遮罩：遮罩会连带把卡片底部压暗，
+ *  看起来像渲染脏了；作为背景则卡片保持纯净，只有卡片之间的空隙透出色带。
+ *
+ *  手机上这条色带正好落在固定导航条（半透明 + 模糊）下面，
+ *  导航条会透过模糊吃到同一份色调，于是"底部导航 + 页面收尾"成为同一块区域。
+ * ============================================================ */
+body::before {
+  content: '';
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  height: var(--bottom-band-h);
+  /* 三段而不是两段：让上方淡入得更慢、下方收得更实。
+     两段的线性淡出看起来像"蹭脏了一块"，这样更像有意设计的收尾。 */
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    color-mix(in srgb, var(--bg-bottom) 45%, transparent) 58%,
+    var(--bg-bottom) 100%
+  );
+  pointer-events: none;
+  z-index: -1;
+}
+
 button { font-family: inherit; font-size: inherit; cursor: pointer; }
 input, textarea, select { font-family: inherit; font-size: inherit; color: inherit; }
 a { color: var(--brand); text-decoration: none; }
@@ -416,9 +447,11 @@ a:hover { text-decoration: underline; }
   height: calc(var(--bottomnav-h) + env(safe-area-inset-bottom, 0px));
   padding-bottom: env(safe-area-inset-bottom, 0px);
   display: flex;
-  background: color-mix(in srgb, var(--bg-surface) 94%, transparent);
-  backdrop-filter: blur(12px);
-  border-top: 1px solid var(--border);
+  /* 掺一点点底部色带（--bg-bottom）让它和页面收尾属于同一块区域，
+     不再是一条"贴上去的纯白板"；仍保留半透明 + 模糊，滚动时能透出内容。 */
+  background: color-mix(in srgb, var(--bg-surface) 88%, var(--bg-bottom));
+  backdrop-filter: saturate(140%) blur(12px);
+  border-top: 1px solid color-mix(in srgb, var(--border) 80%, var(--brand));
 }
 .app[data-device='desktop'] .bottomnav { display: none; }
 
@@ -1805,7 +1838,10 @@ html[data-theme='dark'] {
   overflow-x: hidden;                   /* 轨道态把文字裁掉，不产生横向滚动 */
   overflow-y: auto;
   z-index: 27;
-  background: var(--bg-app);
+  /* 收起态背景透明：轨道整体落在 .shell 为它预留的留白里（不会压到内容），
+     透明就能让页面底部的色带一路延伸过来，左下角不会出现一块没被色带覆盖的灰条。
+     展开时才需要不透明（要盖住它压住的那部分内容），见下面的展开态规则。 */
+  background: transparent;
   border-right: 1px solid var(--border);
   transition: width 240ms cubic-bezier(.22,1,.36,1), box-shadow 240ms ease;
   box-shadow: var(--shadow-sm);
@@ -1815,6 +1851,9 @@ html[data-theme='dark'] {
 .app[data-device='desktop'] .sidebar:hover,
 .app[data-device='desktop'] .sidebar:focus-within {
   width: var(--sidebar-w);
+  /* 立刻变不透明（不加 background 过渡）：否则展开动画的头一百毫秒会半透明，
+     被盖住的内容会从面板里"透出来"，看起来像脏了。 */
+  background: var(--bg-app);
   box-shadow: var(--shadow-lg);
 }
 
