@@ -1,4 +1,4 @@
-/* ============================================================
+﻿/* ============================================================
  *  style.css —— 组件样式
  *
  *  铁律：本文件禁止出现硬编码色值，一律引用 tokens.css 的变量。
@@ -2048,11 +2048,20 @@ html[data-theme='dark'] {
 /* 轨道态不显示筛选面板：它没有图标可留，塞进 56px 只会变成一条被裁掉的碎片。
    用 display 切换而不是 opacity，避免在轨道下方留下一大块不可见但可点的区域；
    展开由 :focus-within 一并触发，所以 Tab 进侧栏后筛选器照样够得到。 */
-.app[data-device='desktop'] .sidebar > .panel + .panel { display: none; }
-.app[data-device='desktop'] .sidebar:hover > .panel + .panel,
-.app[data-device='desktop'] .sidebar:focus-within > .panel + .panel {
+.app[data-device='desktop'] .sidebar > .panel:last-child { display: none; }
+.app[data-device='desktop'] .sidebar:hover > .panel:last-child,
+.app[data-device='desktop'] .sidebar:focus-within > .panel:last-child {
   display: block;
   animation: expandIn 200ms ease-out;
+}
+.app[data-device='desktop'] .sidebar > .panel + .panel { margin-top: var(--sp-4); position: relative; }
+.app[data-device='desktop'] .sidebar > .panel + .panel::before {
+  content: '';
+  position: absolute; left: 50%; top: calc(-1 * var(--sp-2) - 1px);
+  transform: translateX(-50%);
+  width: 22px; height: 1px;
+  background: var(--border-strong);
+  border-radius: 1px;
 }
 
 /* 轨道态：图标居中，避免贴着左边框显得歪 */
