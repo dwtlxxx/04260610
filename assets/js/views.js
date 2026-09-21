@@ -829,12 +829,13 @@ export function renderDesktop(state, dataset) {
   const boardItems = itemsOfBoard(dataset, boardId);
   const isTimeline = boardId === BOARD.TIMELINE;
 
-  /* 左侧栏改为"鼠标移到左边缘自动滑出"的浮层（原先靠顶栏按钮手动开合）。
-     热区必须是 .sidebar 的【前一个兄弟节点】：CSS 用 `:hover ~ .sidebar` 触发展开，
-     这样从热区滑到侧栏上的过程中两个 hover 条件有重叠，不会闪。
-     热区仅电脑端显示（见 CSS），手机端不会留下一条死区。 */
-  const sidebar = h`<div class="sidebar-hotzone" aria-hidden="true"></div>
-  <aside class="sidebar" aria-label="板块与筛选">
+  /* 左侧栏在电脑端是"图标轨道 + 悬停展开"：收起时仍保留板块图标，鼠标移到轨道上即展开。
+     早先的实现是"完全隐藏 + 屏幕左边缘 16px 隐形热区"，两个问题：
+       ① 收起后什么都看不见，用户不知道那里有东西；
+       ② 隐形热区在【窗口化（非全屏）】时几乎点不到 —— 全屏时指针会被屏幕边缘"挡住"
+          从而碰巧命中，窗口化时没有这个边界，很容易差十几像素而毫无反应。
+     现在轨道本身就是可见、够大的悬停目标，两个问题一起消失，也不需要热区元素了。 */
+  const sidebar = h`<aside class="sidebar" aria-label="板块与筛选">
     ${boardNavPanel(state, dataset)}
     ${state.route === 'feed' ? filterPanel(state) : ''}
   </aside>`;
@@ -894,7 +895,7 @@ function boardNavPanel(state, dataset) {
     return h`<button class="nav-link ${on ? 'is-active' : ''} ${b.official ? 'is-official' : ''}"
         data-action="board" data-id="${esc(b.id)}">
       <span class="nav-board-icon" aria-hidden="true">${esc(b.icon)}</span>
-      <span>${esc(b.label)}</span>
+      <span class="nav-label">${esc(b.label)}</span>
       <span class="count">${count}</span>
     </button>`;
   }).join('');
@@ -906,12 +907,12 @@ function boardNavPanel(state, dataset) {
       <button class="nav-link ${state.route === 'feed' && state.board === BOARD.TIMELINE ? 'is-active' : ''}"
           data-action="board" data-id="${BOARD.TIMELINE}">
         <span class="nav-board-icon" aria-hidden="true">时</span>
-        <span>时间线</span><span class="count">${dataset.length}</span>
+        <span class="nav-label">时间线</span><span class="count">${dataset.length}</span>
       </button>
       <button class="nav-link" data-action="nav" data-route="mine">
-        ${ICON.star}<span>我的日程</span><span class="count">${state.favorites.length}</span>
+        ${ICON.star}<span class="nav-label">我的日程</span><span class="count">${state.favorites.length}</span>
       </button>
-      <button class="nav-link" data-action="open-publish">${ICON.plus}<span>发布信息</span></button>
+      <button class="nav-link" data-action="open-publish">${ICON.plus}<span class="nav-label">发布信息</span></button>
     </div>
   </div>`;
 }

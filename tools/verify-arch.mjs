@@ -276,10 +276,13 @@ const checks = [
     : ['AI 悬浮入口已渲染', /ai-fab/.test(html)],
   ...(isDesktop ? [
     ['排序栏已渲染', /viewmode-bar/.test(html) && /智能排序/.test(html)],
-    // 左侧栏改为"鼠标移到左边缘自动滑出"：热区与侧栏都必须渲染，
-    // 且顶栏右上角那个手动开合按钮必须已经删掉。
-    ['左侧栏与感应热区已渲染', /class="sidebar-hotzone"/.test(html) && /class="sidebar"/.test(html)],
-    ['已移除顶栏的侧栏开关按钮（改为鼠标悬停展开）',
+    // 左侧栏是"图标轨道 + 悬停展开"：轨道要有图标（收起时保留的信息），
+    // 文字要有 nav-label 标记（CSS 靠它做轨道态的淡出/展开），且旧的隐形热区必须已删除。
+    ['左侧栏（图标轨道）已渲染',
+      /class="sidebar"/.test(html) && /nav-board-icon/.test(html) && /nav-label/.test(html)],
+    ['已删除隐形热区（改为可见轨道触发，修非全屏点不到的问题）',
+      !/sidebar-hotzone/.test(html)],
+    ['已移除顶栏的侧栏开关按钮',
       !/sidebar-toggle/.test(html) && !/data-action="toggle-sidebar"/.test(html)],
     ['已移除表格切换（按反馈）', !/data-action="view-mode"/.test(html) && !/class="dtable"/.test(html)],
   ] : []),

@@ -462,9 +462,9 @@ a:hover { text-decoration: underline; }
  *  右栏在代码中名为 .aside-col（内含 AI 常驻栏 + aside-scroll），
  *  旧的 .aside 规则已废弃，避免与 .aside-col 的 display 规则冲突。
  * ============================================================ */
-/* 手机端没有侧栏；电脑端的侧栏是"鼠标移到左边缘自动滑出"的浮层，见文末的
-   「左侧栏自动收放」一节。这里只声明两条通用的显隐规则。 */
-.sidebar, .sidebar-hotzone { display: none; }
+/* 手机端没有侧栏；电脑端的侧栏是"图标轨道 + 悬停展开"，见文末
+   「左侧栏：图标轨道 + 悬停展开」一节。这里只声明默认隐藏。 */
+.sidebar { display: none; }
 
 .app[data-device='desktop'] .main-col { padding-top: var(--sp-5); }
 
@@ -1775,62 +1775,79 @@ html[data-theme='dark'] {
 .app[data-device='mobile'] .feed-grid > .card { display: block; }
 
 /* ============================================================
- *  左侧栏自动收放（电脑端）
+ *  左侧栏：图标轨道 + 悬停展开（电脑端）
  *
- *  交互：鼠标移到屏幕左边缘 → 侧栏滑出；鼠标离开侧栏 → 自动收回。
- *        原先靠顶栏右上角一个"«/»"按钮手动开合，已按反馈删除。
+ *  交互：收起时是窄轨道，仍显示板块图标；鼠标移到轨道上 → 展开为完整面板；
+ *        鼠标离开 → 收回轨道。高亮当前板块让轨道态也能看出"我在哪"。
  *
- *  三个设计决定（都是为了"符合直觉"）：
- *   ① 用 fixed 浮层而不是挤压布局：侧栏若在文档流里，展开时会挤压主区，
- *      于是每次鼠标扫过左边，信息流都要重排（多列瀑布流还会整块跳），非常刺眼。
- *      浮层只做 translateX，主区纹丝不动。
- *   ② 触发展开靠"左边缘热区"（.sidebar-hotzone，.sidebar 的前一个兄弟节点）：
- *      侧栏收起时 width 已为 0，没有可悬停的东西，必须留一条极窄的感应边。
- *      用 `:hover ~ .sidebar` 选择器而不是 JS，鼠标扫过不会触发任何重渲染。
- *   ③ 键盘可达性：`:focus-within` 同样触发展开 —— 否则 Tab 进侧栏链接时
- *      焦点会落在屏幕外，看不见自己在哪。
+ *  —— 为什么从"隐形热区"改成"可见轨道"（两个真实问题）——
+ *   ① 收起后完全看不见（width:0 + opacity:0），用户不知道左边缘有东西；
+ *   ② 隐形热区在【窗口化（非全屏）】时几乎点不到：全屏时指针撞到屏幕边缘会被"挡住"，
+ *      于是碰巧命中那条 16px 热区；窗口化时没有这个物理边界，指针很容易差十几像素，
+ *      表现为"鼠标移过去没反应、展开不了"。轨道本身就是又大又可见的目标，两个问题一起解决。
+ *
+ *  —— 两个仍然保留的决定 ——
+ *   ③ 展开是 fixed 浮层而不是挤压布局：若在文档流里展开，每次鼠标扫过左边都会重排
+ *      信息流（多列瀑布流整块跳）。所以轨道占位由 .shell 的 padding-left 预留，
+ *      展开只是 width 变化，主区纹丝不动。
+ *   ④ 文字与筛选面板在轨道态用 opacity 隐藏而不是 display/visibility：
+ *      它们仍留在可访问性树与 Tab 顺序里，键盘 Tab 进侧栏时 :focus-within 会把面板展开，
+ *      焦点不会落在看不见的地方（display:none 会让键盘用户永远够不到筛选器）。
  * ============================================================ */
-.app[data-device='desktop'] .sidebar-hotzone {
-  display: block;
-  position: fixed;
-  top: 0; left: 0; bottom: 0;
-  width: 16px;
-  z-index: 26;
-}
-
 .app[data-device='desktop'] .sidebar {
   display: block;
   position: fixed;
   top: var(--topbar-h);
   bottom: 0;
-  /* 贴齐屏幕左边缘，而不是对齐居中的内容区：
-     侧栏是"鼠标扫到左边缘就滑出"的，如果超宽屏上把它推到内容左边缘，
-     指针停在 x=6 时面板却出现在 260px 之外，反而更不符合直觉。
-     贴边还顺带让位移计算变得干净（translateX(-100%) 就是完全移出屏幕，
-     不必去算居中留白，也不会踩到 100vw 含滚动条宽度的坑）。 */
   left: 0;
-  width: var(--sidebar-w);
-  padding: var(--sp-4);
+  width: var(--rail-w);                 /* 收起态：图标轨道 */
+  padding: var(--sp-3) var(--sp-2);
+  overflow-x: hidden;                   /* 轨道态把文字裁掉，不产生横向滚动 */
   overflow-y: auto;
   z-index: 27;
   background: var(--bg-app);
   border-right: 1px solid var(--border);
-  box-shadow: var(--shadow-lg);
-  /* 收起态：整体滑出屏幕左侧，并且不吃鼠标事件（否则会挡住主区左侧的点击） */
-  transform: translateX(-100%);
-  opacity: 0;
-  pointer-events: none;
-  transition: transform 260ms cubic-bezier(.22,1,.36,1), opacity 180ms ease;
+  transition: width 240ms cubic-bezier(.22,1,.36,1), box-shadow 240ms ease;
+  box-shadow: var(--shadow-sm);
 }
 
-/* 展开态：鼠标移到左边缘热区 / 鼠标已在侧栏上 / 键盘焦点进入侧栏 */
-.app[data-device='desktop'] .sidebar-hotzone:hover ~ .sidebar,
+/* 展开态：悬停轨道 / 键盘焦点进入侧栏 */
 .app[data-device='desktop'] .sidebar:hover,
 .app[data-device='desktop'] .sidebar:focus-within {
-  transform: translateX(0);
-  opacity: 1;
-  pointer-events: auto;
+  width: var(--sidebar-w);
+  box-shadow: var(--shadow-lg);
 }
+
+/* 轨道态：文字信息淡出，只留图标（保留占位，展开时图标不会位移） */
+.sidebar .nav-label,
+.sidebar .panel-title,
+.sidebar .nav-link .count { transition: opacity 160ms ease; }
+.app[data-device='desktop'] .sidebar .nav-label,
+.app[data-device='desktop'] .sidebar .panel-title,
+.app[data-device='desktop'] .sidebar .nav-link .count { opacity: 0; }
+.app[data-device='desktop'] .sidebar:hover .nav-label,
+.app[data-device='desktop'] .sidebar:hover .panel-title,
+.app[data-device='desktop'] .sidebar:hover .nav-link .count,
+.app[data-device='desktop'] .sidebar:focus-within .nav-label,
+.app[data-device='desktop'] .sidebar:focus-within .panel-title,
+.app[data-device='desktop'] .sidebar:focus-within .nav-link .count { opacity: 1; }
+
+/* 轨道态不显示筛选面板：它没有图标可留，塞进 56px 只会变成一条被裁掉的碎片。
+   用 display 切换而不是 opacity，避免在轨道下方留下一大块不可见但可点的区域；
+   展开由 :focus-within 一并触发，所以 Tab 进侧栏后筛选器照样够得到。 */
+.app[data-device='desktop'] .sidebar > .panel + .panel { display: none; }
+.app[data-device='desktop'] .sidebar:hover > .panel + .panel,
+.app[data-device='desktop'] .sidebar:focus-within > .panel + .panel {
+  display: block;
+  animation: expandIn 200ms ease-out;
+}
+
+/* 轨道态：图标居中，避免贴着左边框显得歪 */
+.app[data-device='desktop'] .sidebar .nav-link { padding-left: var(--sp-3); padding-right: var(--sp-3); }
+.app[data-device='desktop'] .sidebar > .panel { background: none; border: none; box-shadow: none; padding: 0; }
+
+/* 轨道占位：侧栏是 fixed，不占文档流，所以由 shell 预留它的宽度 */
+.app[data-device='desktop'] .shell { padding-left: calc(var(--rail-w) + var(--sp-4)); }
 
 /* ============================================================
  *  显示方式与排序切换栏（电脑端信息流上方）

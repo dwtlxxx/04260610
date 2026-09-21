@@ -199,24 +199,29 @@ try {
   ok('关闭后滚动锁已解除', await evaluate(`return document.body.style.overflow !== 'hidden';`));
 
   console.log('');
-  console.log('=== 7. 左侧栏：鼠标移到左边缘自动滑出（电脑端）===');
-  /* 这一段只能在真浏览器里测：展开完全由 CSS 的
-     `.sidebar-hotzone:hover ~ .sidebar` 驱动，DOM 桩没有样式引擎。
-     用 CDP 派发真实的 mouseMoved，浏览器才会真正套用 :hover。 */
+  console.log('=== 7. 左侧栏：图标轨道 + 悬停展开（电脑端）===');
+  /* 这一段只能在真浏览器里测：展开由 CSS 的 :hover / :focus-within 驱动，
+     DOM 桩没有样式引擎。用 CDP 派发真实的 mouseMoved，浏览器才会真正套用 :hover。 */
   await cdp.send('Emulation.setDeviceMetricsOverride', {
     width: 1440, height: 900, deviceScaleFactor: 1, mobile: false,
   });
   await load(true);
 
-  /** 侧栏当前状态：位移、不透明度、右边界（判断是否真的滑出来了） */
+  /** 侧栏当前状态：宽度、右边界、文字透明度（轨道态应为 0） */
   const sidebarState = () => evaluate(`
     const s = document.querySelector('.sidebar');
     if (!s) return null;
     const cs = getComputedStyle(s);
     const r = s.getBoundingClientRect();
-    return { opacity: Number(cs.opacity), transform: cs.transform,
-      right: Math.round(r.right), left: Math.round(r.left), width: Math.round(r.width),
-      pointerEvents: cs.pointerEvents };`);
+    const label = s.querySelector('.nav-label');
+    const filterPanel = s.querySelectorAll(':scope > .panel')[1];
+    return {
+      width: Math.round(r.width), right: Math.round(r.right), left: Math.round(r.left),
+      opacity: Number(cs.opacity),
+      labelOpacity: label ? Number(getComputedStyle(label).opacity) : null,
+      filterPanelShown: filterPanel ? getComputedStyle(filterPanel).display !== 'none' : null,
+      navIconVisible: !!s.querySelector('.nav-board-icon'),
+    };`);
 
   const moveMouse = (x, y) => cdp.send('Input.dispatchMouseEvent', {
     type: 'mouseMoved', x, y, button: 'none', clickCount: 0,
@@ -224,55 +229,51 @@ try {
 
   ok('顶栏右上角的侧栏开关按钮已移除',
     await evaluate(`return !document.querySelector('.sidebar-toggle') && !document.querySelector('[data-action="toggle-sidebar"]');`));
-  ok('存在左边缘感应热区', await evaluate(`return !!document.querySelector('.sidebar-hotzone');`));
+  ok('旧的隐形热区元素已删除（它正是"非全屏点不到"的原因）',
+    await evaluate(`return !document.querySelector('.sidebar-hotzone');`));
 
   const idle = await sidebarState();
-  ok('默认收起（滑出屏幕外、且不吃鼠标事件）',
-    !!idle && idle.opacity === 0 && idle.right <= 0 && idle.pointerEvents === 'none',
-    idle ? `opacity=${idle.opacity} right=${idle.right} pointer-events=${idle.pointerEvents}` : '侧栏不存在');
+  ok('收起态仍是可见的图标轨道（不是完全消失）',
+    !!idle && idle.width > 40 && idle.width < 80 && idle.opacity === 1 && idle.left === 0,
+    idle ? `宽度=${idle.width} 不透明度=${idle.opacity} left=${idle.left}` : '侧栏不存在');
+  ok('轨道态保留图标', !!idle && idle.navIconVisible);
+  ok('轨道态文字信息淡出（只留图标）',
+    !!idle && idle.labelOpacity === 0, idle ? `nav-label opacity=${idle.labelOpacity}` : '');
+  ok('轨道态不显示筛选面板（塞不进 56px）',
+    !!idle && idle.filterPanelShown === false, idle ? `display 非 none = ${idle.filterPanelShown}` : '');
 
-  await moveMouse(6, 400);              // 鼠标移到最左边缘
-  await sleep(500);                     // 等 260ms 过渡结束
+  /* 关键回归：以前"必须精确命中屏幕左边缘 16px 隐形热区"才展开，
+     窗口化时几乎点不到。现在轨道本身就是可见的大目标 —— 点在轨道上即可展开。 */
+  await moveMouse(28, 400);             // 轨道中心（56px 轨道的中间）
+  await sleep(500);                     // 等 240ms 过渡结束
   const hovered = await sidebarState();
-  ok('鼠标移到左边缘后侧栏滑出',
-    !!hovered && hovered.opacity === 1 && hovered.right > 100,
-    hovered ? `opacity=${hovered.opacity} right=${hovered.right} 宽度=${hovered.width}` : '侧栏不存在');
-  ok('滑出后可以正常点击（恢复鼠标事件）',
-    !!hovered && hovered.pointerEvents === 'auto', hovered ? hovered.pointerEvents : '');
-  /* 侧栏贴齐屏幕左边缘（而不是对齐居中的内容区）：
-     它是"鼠标扫到左边缘就滑出"的，若在超宽屏上被推到内容左边缘，
-     指针停在 x=6 时面板却出现在 260px 之外，反而更别扭。
-     这条同时保证收起时能完全移出屏幕（right 必须为 0）。 */
-  ok('滑出的侧栏贴齐屏幕左边缘（鼠标停在哪就从哪滑出）',
-    await evaluate(`
-      const sb = document.querySelector('.sidebar').getBoundingClientRect();
-      return Math.abs(sb.left) <= 1;`));
+  ok('鼠标移到轨道上即展开（不再要求精确命中屏幕边缘）',
+    !!hovered && hovered.width > 150,
+    hovered ? `宽度=${hovered.width}` : '侧栏不存在');
+  ok('展开后文字信息显示出来',
+    !!hovered && hovered.labelOpacity === 1, hovered ? `nav-label opacity=${hovered.labelOpacity}` : '');
+  ok('展开后才显示筛选面板',
+    !!hovered && hovered.filterPanelShown === true, hovered ? `display 非 none = ${hovered.filterPanelShown}` : '');
+  ok('侧栏始终贴齐屏幕左边缘',
+    !!hovered && Math.abs(hovered.left) <= 1, hovered ? `left=${hovered.left}` : '');
 
-  await moveMouse(120, 400);            // 从热区移到侧栏本体上
-  await sleep(400);
-  const onSidebar = await sidebarState();
-  ok('鼠标从热区移到侧栏上不会闪回（两个 hover 条件有重叠）',
-    !!onSidebar && onSidebar.right > 100 && onSidebar.opacity === 1,
-    onSidebar ? `right=${onSidebar.right} opacity=${onSidebar.opacity}` : '');
-
-  await moveMouse(900, 500);            // 移开
+  /* 指针停在轨道【右边】的内容区时不应展开：说明触发源是轨道，不是左侧一大片区域 */
+  await moveMouse(900, 500);
   await sleep(600);
   const away = await sidebarState();
-  ok('鼠标移开后侧栏自动收回',
-    !!away && away.right <= 0 && away.opacity === 0,
-    away ? `right=${away.right} opacity=${away.opacity}` : '');
+  ok('鼠标移开后收回轨道',
+    !!away && away.width > 40 && away.width < 80,
+    away ? `宽度=${away.width}` : '');
 
-  /* 键盘可达性：只用鼠标的话，Tab 进侧栏会把焦点落在屏幕外，
-     所以 :focus-within 也必须能展开。 */
+  /* 键盘可达性：Tab 进侧栏时若不能展开，焦点会落在看不见的地方 */
   await evaluate(`
     const a = document.querySelector('.sidebar a, .sidebar button, .sidebar input');
     if (a) { a.focus(); return true; }
     return false;`);
   await sleep(500);
   const focused = await sidebarState();
-  ok('键盘焦点进入侧栏时同样展开（焦点不会落在屏幕外）',
-    !!focused && focused.right > 100 && focused.opacity === 1,
-    focused ? `right=${focused.right} opacity=${focused.opacity}` : '');
+  ok('键盘焦点进入侧栏时同样展开（焦点不会落在看不见的地方）',
+    !!focused && focused.width > 150, focused ? `宽度=${focused.width}` : '');
 
   console.log('');
   console.log(`结论：通过 ${pass} 项，失败 ${fail} 项`);

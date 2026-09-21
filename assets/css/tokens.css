@@ -244,6 +244,7 @@ html[data-theme='dark'] {
   /* 布局 */
   --container-max: 1400px;
   --sidebar-w: 220px;
+  --rail-w: 56px;              /* 左侧栏收起时的"图标轨道"宽度 */
   --aside-w: 300px;
   --topbar-h: 56px;
   --bottomnav-h: 56px;
