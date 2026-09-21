@@ -94,33 +94,80 @@ a:hover { text-decoration: underline; }
   clip: rect(0 0 0 0); white-space: nowrap; border: 0;
 }
 
-.boot {
-  display: flex; align-items: center; justify-content: center;
-  height: 60vh; color: var(--text-tertiary);
-}
-
 /* ============================================================
- *  应用外壳
+ *  加载页：产品自身的骨架屏
+ *
+ *  设计取舍：
+ *   · 不用进度条 —— 静态站点没有可上报的真实进度，假进度条等于"撒谎"；
+ *   · 不用装饰性动效 —— 加载页只需交代"马上会出现什么"，
+ *     花哨动画会喧宾夺主，也与"信息工具"的调性不符；
+ *   · 骨架屏摆的就是这个产品自己的结构（顶栏 / 筛选条 / 卡片），
+ *     加载完成时真内容基本落在同一位置，观感是"内容就地填上"；
+ *   · 纯 HTML/CSS，不依赖 JS —— 这段界面存在的意义就是"模块还没加载出来时先给个交代"，
+ *     用 JS 驱动等于本末倒置（app.js 一旦 import 失败，连它也不会动）；
+ *   · 复用已有的 .skeleton + shimmer（完整度进度条用的同一套），不另造视觉语言。
  * ============================================================ */
-.app {
-  min-height: 100%;
-  display: flex;
-  flex-direction: column;
+.boot {
+  min-height: 100vh;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: var(--sp-4);
+  padding: var(--sp-6) var(--sp-4);
+  text-align: center;
 }
-
-.app[data-device='mobile'] { padding-bottom: calc(var(--bottomnav-h) + env(safe-area-inset-bottom, 0px)); }
-
-.shell {
-  display: flex;
-  flex: 1;
-  width: 100%;
-  max-width: var(--container-max);
-  margin: 0 auto;
-  gap: var(--sp-5);
-  padding: 0 var(--sp-4);
+.boot-skel {
+  width: 100%; max-width: 720px;
+  display: flex; flex-direction: column; gap: var(--sp-4);
+  /* 骨架只是"占位示意"，压低对比度，避免被误当成真实内容 */
+  opacity: .75;
 }
+.boot-skel-top { display: flex; align-items: center; gap: var(--sp-3); }
+.bs-logo { width: 34px; height: 34px; border-radius: var(--r-md); }
+.bs-search { flex: 1; height: 34px; border-radius: var(--r-md); }
+.bs-icon { width: 34px; height: 34px; border-radius: var(--r-md); flex: none; }
 
-.main-col { flex: 1; min-width: 0; padding-bottom: var(--sp-8); }
+.boot-skel-chips { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.bs-chip { width: 84px; height: 26px; border-radius: var(--r-pill); }
+.bs-chip:nth-child(2) { width: 68px; }
+.bs-chip:nth-child(3) { width: 96px; }
+.bs-chip:nth-child(4) { width: 76px; }
+.bs-chip:nth-child(5) { width: 88px; }
+
+.boot-skel-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-4); }
+.boot-skel-card {
+  display: flex; flex-direction: column; gap: var(--sp-3);
+  padding: var(--sp-4);
+  min-height: 168px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--bg-surface);
+}
+.bs-line { height: 12px; border-radius: var(--r-sm); }
+.bs-w30 { width: 30%; }
+.bs-w35 { width: 35%; }
+.bs-w45 { width: 45%; }
+.bs-w50 { width: 50%; }
+.bs-w60 { width: 60%; }
+.bs-w65 { width: 65%; }
+.bs-w75 { width: 75%; }
+.bs-w80 { width: 80%; }
+
+.boot-title {
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+}
+.boot-sub { font-size: var(--fs-xs); color: var(--text-tertiary); }
+
+/* 手机端：骨架改成单列，和真实信息流一致 */
+@media (max-width: 767px) {
+  .boot-skel-cards { grid-template-columns: 1fr; }
+  .boot-skel-card:last-child { display: none; }
+}
+/* 减少动效：骨架不做微光扫动，只留静态占位 */
+@media (prefers-reduced-motion: reduce) {
+  .boot-skel .skeleton { animation: none; }
+}
 
 /* ============================================================
  *  顶栏

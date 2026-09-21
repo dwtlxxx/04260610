@@ -61,7 +61,45 @@
 </head>
 <body>
   <div id="app" class="app" data-device="mobile" aria-busy="true">
-    <div class="boot">正在加载…</div>
+    <!-- 加载页：产品自身的"骨架屏"（顶栏 + 筛选条 + 卡片占位），纯 HTML/CSS，不依赖 JS。
+         为什么用骨架屏而不是进度条或动效：静态站点没有真实进度可报，假进度条是撒谎；
+         骨架屏直接摆出"马上会出现什么"，加载完成时骨架换成真内容、位置基本对齐，
+         观感是"内容就地填上"，而不是"先看一段动画再跳转"。
+         ⚠ 文案里必须保留"正在加载"这四个字：自检脚本靠它判断"页面是否已脱离加载态"
+         （verify-arch / verify-interaction / check-browser），换掉会让那些断言假通过。 -->
+    <div class="boot" role="status" aria-live="polite">
+      <div class="boot-skel" aria-hidden="true">
+        <div class="boot-skel-top">
+          <span class="skeleton bs-logo"></span>
+          <span class="skeleton bs-search"></span>
+          <span class="skeleton bs-icon"></span>
+          <span class="skeleton bs-icon"></span>
+        </div>
+        <div class="boot-skel-chips">
+          <span class="skeleton bs-chip"></span>
+          <span class="skeleton bs-chip"></span>
+          <span class="skeleton bs-chip"></span>
+          <span class="skeleton bs-chip"></span>
+          <span class="skeleton bs-chip"></span>
+        </div>
+        <div class="boot-skel-cards">
+          <div class="boot-skel-card">
+            <span class="skeleton bs-line bs-w35"></span>
+            <span class="skeleton bs-line bs-w80"></span>
+            <span class="skeleton bs-line bs-w60"></span>
+            <span class="skeleton bs-line bs-w45"></span>
+          </div>
+          <div class="boot-skel-card">
+            <span class="skeleton bs-line bs-w30"></span>
+            <span class="skeleton bs-line bs-w75"></span>
+            <span class="skeleton bs-line bs-w65"></span>
+            <span class="skeleton bs-line bs-w50"></span>
+          </div>
+        </div>
+      </div>
+      <div class="boot-title">校园机会雷达</div>
+      <p class="boot-sub">正在加载校园信息 · 零依赖静态站点，通常不到 1 秒</p>
+    </div>
   </div>
 
   <!-- 提示条容器（操作反馈） -->

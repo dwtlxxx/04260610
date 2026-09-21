@@ -102,6 +102,32 @@ if (deadScoped.length) {
 }
 
 /* ============================================================
+ * 1.7 加载页检查
+ *
+ * index.html 里的加载页（雷达扫描）有三个必须成立的点：
+ *   ① 它必须存在，且带 boot-radar 标记 —— 否则用户看到的是白屏；
+ *   ② 它必须【保留"正在加载"这四个字】—— verify-arch / verify-interaction /
+ *      check-browser 都靠这四个字判断"页面是否已脱离加载态"，
+ *      把它换成别的文案，那些断言就会永远通过（假绿），这是很隐蔽的退化；
+ *   ③ 它不能依赖 JS：这是"模块还没加载出来时"的界面，用 JS 驱动等于本末倒置。
+ * ============================================================ */
+const htmlSrc = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+console.log('');
+console.log('=== 1.7 加载页检查 ===');
+const bootChecks = [
+  ['加载页存在（含骨架屏标记）', /class="boot-skel"/.test(htmlSrc)],
+  ['加载页保留了"正在加载"文案（否则加载态断言会假通过）', /正在加载/.test(htmlSrc)],
+  ['加载页不依赖 JS（骨架直接写在 index.html 里）',
+    /<div class="boot"[\s\S]{0,900}boot-skel-cards/.test(htmlSrc)],
+  ['加载页只用已有的骨架微光，没有装饰性动效',
+    !/boot-radar|boot-sweep|boot-blip/.test(css) && /\.boot-skel \.skeleton \{ animation: none; \}/.test(css)],
+];
+bootChecks.forEach(([name, pass]) => {
+  if (pass) console.log(`  ✓ ${name}`);
+  else note('error', `加载页检查未通过：${name}`);
+});
+
+/* ============================================================
  * 2. JS 中用到的 class 是否在 CSS 中有定义
  * ============================================================ */
 // 仅检查形如 class="a b c" 的静态字符串中出现的自定义类（排除框架/工具类与动态拼接）
