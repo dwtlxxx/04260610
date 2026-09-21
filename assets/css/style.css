@@ -1,4 +1,4 @@
-﻿/* ============================================================
+/* ============================================================
  *  style.css —— 组件样式
  *
  *  铁律：本文件禁止出现硬编码色值，一律引用 tokens.css 的变量。
@@ -208,12 +208,22 @@ a:hover { text-decoration: underline; }
   gap: var(--sp-2); min-width: 0;
   text-align: center;
 }
+/* 品牌标识：品牌色渐变圆角方块 + 白色「机会信号」标记。
+   渐变与页面底部色带、卡片底色同源（都由 --brand 混出），三种底色属同一色系；
+   另叠一层顶部高光，缩到 30px 仍有立体感、不糊。 */
 .brand-logo {
-  width: 30px; height: 30px; border-radius: 8px; flex: none;
-  background: var(--brand); color: var(--text-on-brand);
+  width: 30px; height: 30px; border-radius: 9px; flex: none;
   display: grid; place-items: center;
-  font-weight: var(--fw-bold); font-size: var(--fs-sm);
+  color: var(--text-on-brand);
+  background: linear-gradient(150deg,
+    color-mix(in srgb, var(--brand) 86%, #ffffff) 0%,
+    var(--brand) 46%,
+    color-mix(in srgb, var(--brand) 72%, var(--ai-accent)) 100%);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, #ffffff 36%, transparent),
+    0 1px 3px color-mix(in srgb, var(--brand) 30%, transparent);
 }
+.brand-logo svg { display: block; }
 .brand-text { display: flex; flex-direction: column; min-width: 0; align-items: center; }
 .brand-name {
   font-weight: var(--fw-semibold); font-size: var(--fs-md);

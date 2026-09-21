@@ -205,7 +205,8 @@
 │   ├── check-browser.mjs         # 真浏览器端到端：收藏→我的日程→刷新保留 等关键路径
 │   ├── shots.mjs                 # 真实截图（设备模拟）：按宽度截图 / 慢放截取动画帧
 │   ├── dbg-search.mjs            # 搜索排查脚本：定位某个词到底命中了哪个字段
-│   └── report-arch.mjs           # 架构度量报告：依赖图/循环依赖/分层/死导出/控制器集中度
+│   ├── report-arch.mjs           # 架构度量报告：依赖图/循环依赖/分层/死导出/控制器集中度
+│   └── convert-audio.mjs         # 背景音乐压缩：按 RIFF 分块解析 + 重采样（无第三方依赖）
 ├── .gitignore / .gitattributes / .nojekyll
 └── README.md
 ```

@@ -55,7 +55,10 @@ function topbar(state, dataset) {
   return h`<header class="topbar">
     <div class="topbar-inner">
       <div class="brand">
-        <span class="brand-logo" aria-hidden="true">机</span>
+        <span class="brand-logo" aria-hidden="true"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><!-- 「机会信号」标记：左下实心点 + 两道向右上扩散的弧。
+               换成几何标识而不是汉字方块：方块里放「机」既和产品名对不上，缩到 30px 也糊成一团。
+               现在读作"捕捉到的机会信号"，静态、几何、无动效。 -->
+              <circle cx="7.6" cy="16.4" r="2.3" fill="currentColor" stroke="none"/><path d="M13.6 16.4Q13.6 10.4 7.6 10.4"/><path d="M18.1 16.4Q18.1 5.9 7.6 5.9"/></svg></span>
         <span class="brand-text">
           <span class="brand-name">校园机会雷达</span>
           <span class="brand-sub">珠科 · ${state.totalCount} 条信息已整理</span>
