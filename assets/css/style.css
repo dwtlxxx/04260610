@@ -2036,7 +2036,6 @@ html[data-theme='dark'] {
 .sidebar .panel-title,
 .sidebar .nav-link .count { transition: opacity 160ms ease; }
 .app[data-device='desktop'] .sidebar .nav-label,
-.app[data-device='desktop'] .sidebar .panel-title,
 .app[data-device='desktop'] .sidebar .nav-link .count { opacity: 0; }
 .app[data-device='desktop'] .sidebar:hover .nav-label,
 .app[data-device='desktop'] .sidebar:hover .panel-title,
@@ -2370,4 +2369,17 @@ html[data-theme='dark'] {
   margin: 0 auto;
   gap: var(--sp-5);
   padding: 0 var(--sp-4);
+}
+/* 收起态【保留分组标题】：用户给的参考图里「板块」是显示出来的。
+   之前为了"轨道干净"把它一起淡出，收起后只剩一串图标、看不出分组，与参考图不符。
+   现在常显并居中（组与组之间已有短分隔线区分）。 */
+.app[data-device='desktop'] .sidebar .panel-title {
+  opacity: 1;
+  justify-content: center;
+  font-size: 10px;
+  letter-spacing: .04em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-align: center;
+  padding: 0 0 var(--sp-1);
 }
