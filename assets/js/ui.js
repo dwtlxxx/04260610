@@ -216,6 +216,10 @@ export const ICON = {
   boardStudent: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="9" r="3.4"/><path d="M5.5 20c.7-3.3 3.3-5.4 6.5-5.4s5.8 2.1 6.5 5.4"/></svg>',
   boardTimeline: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4.2v15.6"/><circle cx="12" cy="7.6" r="1.7"/><circle cx="12" cy="13" r="1.7"/><circle cx="12" cy="18.2" r="1.7"/></svg>',
   arrowUp: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5.6"/><path d="M6.4 11.2L12 5.6l5.6 5.6"/></svg>',
+  /* 音符：用"常规音符符号"（八分音符）表示背景音乐开关，
+     而不是自造的抽象图形 —— 用户明确要求"常规音符符号" */
+  note: '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V6.4l9-1.8V16"/><circle cx="6.6" cy="18" r="2.6"/><circle cx="15.6" cy="16" r="2.6"/></svg>',
+  noteOff: '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V6.4l7-1.4"/><circle cx="6.6" cy="18" r="2.6"/><path d="M16 15.5l5 5M21 15.5l-5 5"/></svg>',
 };
 
 /* ============================================================

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * app.js —— 应用入口与控制器
  *
  * 职责：
@@ -19,6 +19,8 @@ import {
 } from './logic.js';
 import * as store from './store.js';
 import { initTheme, cycleTheme, getCurrentMode, resolveTheme, THEME_MODE_LABEL } from './theme.js';
+import { initMusic, toggleMusic, musicOn, getLevel, getSpectrum, getBands } from './music.js';
+import { startDecor } from './decor.js';
 import {
   esc, h, ICON, toast, statusBadge, sourceTag, kindTag, credibilityBadge,
   fieldGrid, riskList, seriesNote, roleNote, completenessMeter, missingLine,
@@ -50,6 +52,7 @@ const state = {
   aiPanel: null,                 // 展开中的 AI 面板：null | dock | sheet | detail
   filters: { keyword: '' },      // 侧栏 / 搜索
   sort: { key: 'smart', dir: 'asc' },
+  musicOn: false,               // 背景音乐开关（真实状态由 music.js 持有）
   favorites: [],
   now: new Date(),
   modal: null,                   // { type, id } | null
@@ -734,6 +737,13 @@ function handleAction(e, el) {
       return;
     }
 
+    case 'toggle-music': {
+      state.musicOn = toggleMusic();
+      toast(state.musicOn ? '背景音乐已开启' : '背景音乐已关闭', 'info');
+      render();                      // 只为刷新按钮的图标与 aria 状态
+      return;
+    }
+
     case 'toggle-theme': {
       const next = cycleTheme();
       toast(`主题：${THEME_MODE_LABEL[next]}`, 'info');
@@ -1096,8 +1106,15 @@ function init() {
     if (Array.isArray(prefs.activeTags)) state.activeTags = prefs.activeTags;
     if (prefs.sort && prefs.sort.key) state.sort = prefs.sort;
     // 侧栏不再有"收起/展开"这个可持久化的用户偏好：它已改为鼠标移到左边缘自动滑出
+    state.musicOn = initMusic('./assets/audio/haiyuan.wav');
     render();
     syncToTop();
+    /* 律动装饰：一个 rAF 循环同时画底部波形与写 :root 的 --beat，
+       卡片的律动交给 CSS 消费（26 张卡也只有一次样式计算）。 */
+    startDecor({
+      canvas: appEl.querySelector('.wave-canvas'),
+      getLevel, getSpectrum, getBands, isOn: musicOn,
+    });
   } catch (err) {
     showFatal(err);
     throw err;

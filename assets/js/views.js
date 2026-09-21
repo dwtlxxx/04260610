@@ -1,4 +1,4 @@
-/**
+﻿/**
  * views.js —— 双端视图层
  *
  * 同一批数据（来自 logic.js 的派生结果），两种结构：
@@ -72,7 +72,10 @@ function topbar(state, dataset) {
       </div>
 
       <div class="tb-actions">
-        <button class="icon-btn" data-action="toggle-theme"
+        <button class="icon-btn music-toggle ${state.musicOn ? 'is-on' : ''}" data-action="toggle-music"
+                title=""
+                aria-pressed=""
+                aria-label="">${state.musicOn ? ICON.note : ICON.noteOff}</button>        <button class="icon-btn" data-action="toggle-theme"
                 title="主题：${esc(themeModeLabel)}（点击切换）" aria-label="切换主题，当前${esc(themeModeLabel)}">
           ${ICON.theme}<span class="mode-label">${esc(themeModeLabel)}</span>
         </button>
@@ -878,6 +881,7 @@ export function renderMobile(state, dataset) {
     </div>
     ${onFeed ? h`<button class="fab" data-action="open-publish" aria-label="发布" title="发布信息">${ICON.plus}</button>` : ''}
     ${onFeed ? toTopButton() : ''}
+    ${waveCanvas()}
     ${bottomNav(state)}
     ${aiSheet(state, dataset)}`;
 }
@@ -889,6 +893,15 @@ export function renderMobile(state, dataset) {
  * 由 app.js 的滚动监听按 scrollY 切换 —— 因此这里不带任何滚动状态，
  * 渲染函数保持"纯 state → HTML"。
  */
+/**
+ * 底部律动波形画布（两端共用）。
+ * 视觉参照用户给的参考图：极细的流动曲线 + 左端圆环节点 + 散布光点。
+ * 尺寸由 CSS 定（固定在底部、全宽、约 132px 高），这里只管标记。
+ */
+export function waveCanvas() {
+  return h`<canvas class="wave-canvas" aria-hidden="true"></canvas>`;
+}
+
 export function toTopButton() {
   return h`<button class="to-top" data-action="to-top" aria-label="回到顶部" title="回到顶部">
     ${ICON.arrowUp}
