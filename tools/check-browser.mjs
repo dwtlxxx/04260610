@@ -229,6 +229,30 @@ try {
 
   ok('顶栏右上角的侧栏开关按钮已移除',
     await evaluate(`return !document.querySelector('.sidebar-toggle') && !document.querySelector('[data-action="toggle-sidebar"]');`));
+
+  /* 顶栏按钮里的文字不得溢出按钮。
+     真实缺陷：主题按钮在桌面端会显示"跟随系统/浅色/深色"，但加宽用的 .with-label 类
+     从来没有被 JS 加上过（死 CSS），于是 36px 的方按钮里塞了 4 个汉字，文字溢到按钮外
+     —— 用户看到的就是"按钮字出来了"。现在显示文字与加宽绑在同一个选择器上，
+     并且用这条断言守住"文字必须待在按钮里"。 */
+  const spill = await evaluate(`
+    const bad = [];
+    document.querySelectorAll('.topbar .icon-btn').forEach((b) => {
+      const label = b.querySelector('.mode-label');
+      const br = b.getBoundingClientRect();
+      if (label && getComputedStyle(label).display !== 'none') {
+        const lr = label.getBoundingClientRect();
+        if (lr.right > br.right + 1 || lr.left < br.left - 1) {
+          bad.push((b.textContent || '').trim() + ' 文字超出按钮');
+        }
+      }
+      if (b.scrollWidth > b.clientWidth + 1) {
+        bad.push((b.textContent || '').trim() + ' 内容溢出(' + b.scrollWidth + '>' + b.clientWidth + ')');
+      }
+    });
+    return JSON.stringify(bad);`);
+  ok('顶栏按钮里的文字都在按钮范围内',
+    JSON.parse(spill).length === 0, spill === '[]' ? '' : spill);
   ok('旧的隐形热区元素已删除（它正是"非全屏点不到"的原因）',
     await evaluate(`return !document.querySelector('.sidebar-hotzone');`));
 

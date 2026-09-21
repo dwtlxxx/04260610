@@ -1,4 +1,4 @@
-﻿/* ============================================================
+/* ============================================================
  *  style.css —— 组件样式
  *
  *  铁律：本文件禁止出现硬编码色值，一律引用 tokens.css 的变量。
@@ -2117,7 +2117,18 @@ html[data-theme='dark'] {
 /* —— 桌面（>=1024px）—— */
 @media (min-width: 1024px) {
   .icon-btn .mode-label { display: inline; font-size: var(--fs-xs); }
-  .icon-btn.with-label { width: auto; padding: 0 var(--sp-3); gap: 5px; grid-auto-flow: column; }
+  /* ⚠ 带文字的按钮必须同时变宽，否则 36px 的方按钮装不下"跟随系统"，
+     文字会从按钮里溢出来（用户反馈的"按钮字出来了"）。
+     这里用 :has() 把"显示文字"和"加宽"绑成同一个条件 ——
+     原先靠 JS 加 .with-label 类，而那个类从来没被加过（死 CSS），
+     于是文字显示了、按钮还是 36px，正好溢出。
+     写成同一个选择器后，两者不可能再不一致。 */
+  .icon-btn:has(.mode-label) {
+    width: auto;
+    padding: 0 var(--sp-3);
+    gap: 5px;
+    grid-auto-flow: column;
+  }
   .card { padding: var(--sp-4) var(--sp-5); }
   .fab { width: 56px; height: 56px; }
   .tl-date { position: static; background: none; backdrop-filter: none; }
