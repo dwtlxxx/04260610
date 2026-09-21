@@ -148,5 +148,34 @@ ok('空关键词不产生解释', L.explainSearch('', itemsOf('羽毛球')) === 
 ok('无结果时解释的条数为 0', (L.explainSearch('zzz', []) || {}).count === 0);
 
 console.log('');
+console.log('=== ⑪ 精度：两个字的中文查询不做错字容错 ===');
+/* 实测踩到的精度缺陷：中文两个字信息量太低，"容忍 1 个错字"会命中一大片 ——
+   搜「大一」时「大学生」只差一个字，26 条里命中 21 条，
+   用户感受就是"搜什么都出一堆、等于没搜"。现在两字查询只走字面匹配。 */
+const hitCount = (kw) => idsOf(kw).length;
+ok('「大一」不再命中"大学生"这类近似词', hitCount('大一') <= 3, `命中 ${hitCount('大一')} 条`);
+ok('「回放」只命中真正相关的条目', hitCount('回放') <= 2, `命中 ${hitCount('回放')} 条`);
+ok('三个字以上的错字容错仍然生效', idsOf('兰桥杯').includes('1') && idsOf('数学建摸').includes('4'));
+ok('两字查询的字面命中不受影响', idsOf('篮球').includes('22') && idsOf('羽毛球').includes('22'));
+
+console.log('');
+console.log('=== ⑫ 逐条命中说明（列表上标明"为什么命中"）===');
+const item22 = all.find((x) => String(x.id) === '22');
+const mi = L.matchInfo(item22, '羽毛球');
+ok('字面命中给出字段与片段',
+  !!mi && mi.mode === 'literal' && mi.field === '标题'
+  && mi.text.slice(mi.start, mi.start + mi.length) === '羽毛球',
+  mi ? `${mi.field}/${mi.mode}` : '(无)');
+const mi2 = L.matchInfo(item22, 'ymq');
+ok('拼音命中说明方式为 pinyin', !!mi2 && mi2.mode === 'pinyin', mi2 ? mi2.mode : '(无)');
+const mi3 = L.matchInfo(all.find((x) => String(x.id) === '13'), '招人');
+ok('近义命中标出由哪个词扩展而来',
+  !!mi3 && mi3.mode === 'synonym' && mi3.synFrom === '招人',
+  mi3 ? `${mi3.mode}/${mi3.synFrom}` : '(无)');
+ok('无关词不产生命中说明', L.matchInfo(item22, 'zzz') === null);
+const litHit = L.highlightMatch(mi);
+ok('高亮片段可切出命中词', !!litHit && litHit.hit === '羽毛球', litHit ? litHit.hit : '(无)');
+
+console.log('');
 console.log(`结论：通过 ${pass} 项，失败 ${fail} 项`);
 process.exit(fail ? 1 : 0);

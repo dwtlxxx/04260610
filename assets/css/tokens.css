@@ -1,4 +1,4 @@
-/* ============================================================
+﻿/* ============================================================
  *  tokens.css —— 设计令牌（Design Tokens）
  *
  *  这是"双端 × 双主题"架构的关键：把颜色抽成变量，
@@ -25,12 +25,12 @@ html[data-theme='light'] {
   /* 页面底部色带：由品牌色与页面底色混合而来，保证"协调"而不是另加一种颜色。
      页面底部原本只是一块纯灰、手机上再压一条纯白的导航条，收尾很生硬。
      8% 时截图里几乎看不出变化，调到 16% 才既能看出来、又不抢内容。 */
-  --bg-bottom: color-mix(in srgb, var(--brand) 16%, var(--bg-app));
+  --bg-bottom: color-mix(in srgb, var(--brand) 34%, var(--bg-app));
   /* 信息卡片的渐变底色：从卡片面（白）渐变到"极淡的品牌色"。
      只掺 6%，整体仍是浅色（白 → 极淡蓝），不会变成彩色卡片；
      因为同样由品牌色混合而来，与底部色带、强调色是一套色系。 */
-  --card-grad-to: color-mix(in srgb, var(--brand) 6%, var(--bg-surface));
-  --bottom-band-h: 190px;      /* 底部色带高度（同时决定手机上导航条上方的渐变长度） */
+  --card-grad-to: color-mix(in srgb, var(--brand) 17%, var(--bg-surface));
+  --bottom-band-h: 280px;      /* 底部色带高度（同时决定手机上导航条上方的渐变长度） */
 
   /* ---- 边框与分隔 ---- */
   --border: #e3e6ea;
@@ -135,9 +135,9 @@ html[data-theme='dark'] {
   --bg-hover: #242830;
   --bg-active: #2b303a;
   /* 深色下色带要更明显一点才看得出来（深色本身对比低），同样由品牌色混合而来 */
-  --bg-bottom: color-mix(in srgb, var(--brand) 22%, var(--bg-app));
+  --bg-bottom: color-mix(in srgb, var(--brand) 42%, var(--bg-app));
   /* 深色下的卡片渐变同样从卡片面出发，只掺 8%，保持整体是深色而不是蓝块 */
-  --card-grad-to: color-mix(in srgb, var(--brand) 8%, var(--bg-surface));
+  --card-grad-to: color-mix(in srgb, var(--brand) 22%, var(--bg-surface));
 
   --border: #2c313a;
   --border-strong: #3a4150;

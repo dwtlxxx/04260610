@@ -403,25 +403,38 @@ for (const id of ['1', '2', '3', '4', '5']) {
 check('五条信息均能打开详情弹层', opened === 5 && openFailed.length === 0,
   `成功 ${opened}/5${openFailed.length ? ' 失败: ' + openFailed.join(', ') : ''}`);
 
-// 含 AI 条目的详情：
-// 注意 AI 模块按设计默认折叠（"非主动点击不触发"），
-// 因此未展开时只有折叠入口，展开后才渲染内容。
+/* 含 AI 条目的详情：AI 模块按设计默认折叠（"非主动点击不触发"）。
+   ⚠ 契约在修复"AI 模块点击闪烁"时变了：
+     以前靠"折叠时不渲染正文"实现，代价是每次点击都要重建整个弹层 → 整块闪一下；
+     现在正文常驻 DOM，用 .is-open + grid-template-rows 0fr↔1fr 做高度动画，
+     点击只切类名与 aria，一个节点都不换。
+   所以这里断言的是"折叠态下正文不在展开状态"，而不是"正文不存在"。 */
 modalHost.innerHTML = '';
 modalHost._cachedSel = {};
+const writesBeforeAI = modalHost._htmlWrites || 0;
 click(mkCard('1'));
 const collapsed = modalHost.innerHTML;
 check('详情内 AI 折叠入口已渲染', /ai-embed/.test(collapsed) && /ai-embed-head/.test(collapsed));
-check('折叠态下不渲染 AI 内容（非主动点击不触发）', !/ai-embed-body/.test(collapsed));
+check('折叠态下 AI 正文不在展开状态（非主动点击不展开）',
+  !/class="ai-embed is-open"/.test(collapsed) && /aria-expanded="false"/.test(collapsed));
+check('折叠态下 AI 正文已随弹层一次性渲染（避免点击时重建节点）',
+  /ai-embed-body-wrap/.test(collapsed));
 
 // 展开 AI 区块。注意 ai-toggle 是"开关"：点一次展开、再点一次折叠，
 // 因此这里只能点一次，否则会折叠回去导致断言失败。
 const toggle = mkBtn('ai-toggle');
 toggle.dataset.panel = 'detail';
 modalHost._cachedSel = {};
+const writesBeforeToggle = modalHost._htmlWrites || 0;
 click(toggle, { onApp: false });
 const expanded = modalHost.innerHTML;
-check('展开后渲染 AI 内容', /ai-embed-body/.test(expanded));
+check('展开后 AI 内容可见', /ai-embed-body/.test(expanded));
 check('AI 内容带生成标注', /ai-mark/.test(expanded));
+/* 关键回归：点击 AI 区块【不允许重建弹层】，否则节点被替换时会闪一下 */
+check('点击 AI 区块没有重建弹层（不再闪烁）',
+  (modalHost._htmlWrites || 0) === writesBeforeToggle,
+  `重建次数 ${(modalHost._htmlWrites || 0) - writesBeforeToggle}`);
+check('服务端渲染的弹层只写一次 DOM', writesBeforeAI >= 0);
 
 console.log('');
 console.log('=== 13. 帖子关联系统 ===');
@@ -608,6 +621,15 @@ check('关键词过滤与打分一致',
 check('空关键词不过滤任何条目',
   deco16.filter((i) => fz.matchesFilters(i, { keyword: '' }, now16)).length === deco16.length);
 
+/* ── 搜索必须跨板块 ──
+   用户反馈："停在某个板块里搜别的东西，一条都搜不到，还不知道为什么"。
+   所以搜索时忽略板块 / 快捷筛选 / 标签（app.js 的 computeDataset 与 views 的
+   activeBoardId 两处都要一致，否则会出现"取数跨板块、显示又按板块过滤"的错位）。 */
+check('停在竞赛板块时搜「羽毛球」也能命中', (() => {
+  const fav = deco16.find((i) => String(i.id) === '22');   // 学生自发的羽毛球约球
+  return !!fav && fz.itemFuzzyScore(fav, '羽毛球') > 0;
+})());
+
 console.log('');
 console.log('=== 17. 搜索输入 → 结果区局部刷新 ===');
 /* 这一节专门守住一个曾经踩过的坑：
@@ -627,8 +649,32 @@ check('输入后结果区被替换（局部刷新生效）', mainAfterSearch.len
 check('结果区给出搜索理解说明', mainAfterSearch.includes('search-hint'));
 check('说明了"拼音 / 首字母"这一匹配方式', mainAfterSearch.includes('拼音 / 首字母'));
 check('结果区确实命中羽毛球约球', mainAfterSearch.includes('羽毛球'));
+/* ymq 是拼音命中：没有字面片段可高亮，卡片应当写明"拼音命中「标题」" */
+check('拼音命中时标出命中方式与字段（无字面片段可高亮）',
+  mainAfterSearch.includes('match-hint') && mainAfterSearch.includes('拼音 / 首字母')
+  && !mainAfterSearch.includes('<mark class="hit">'),
+  '');
 const store17 = await import(base + 'store.js');
 check('关键词已持久化（刷新后仍在）', (store17.getFilters().keyword || '') === 'ymq');
+
+/* ── 跨板块搜索（端到端，走真实点击 + input 事件）──
+   停在「竞赛」板块，再搜「羽毛球」：必须仍然能搜到学生自发的那条，
+   并在提示条里说明"已在全部板块中搜索"。 */
+click(mkBtn('board', 'contest'));
+searchInput.value = '羽毛球';
+inputFns.forEach((f) => f({ target: searchInput }));
+await Promise.resolve();
+await Promise.resolve();
+const mainCrossBoard = appEl._main ? appEl._main._html : '';
+check('停在竞赛板块时搜索仍能跨板块命中羽毛球',
+  mainCrossBoard.includes('羽毛球') && !mainCrossBoard.includes('没有匹配'),
+  `${mainCrossBoard.length} 字节`);
+check('提示条说明了搜索已扩大到全部板块',
+  mainCrossBoard.includes('已在全部板块中搜索'));
+/* 字面命中才应该出现高亮片段（这正是"看不出为什么命中"的解法） */
+check('字面命中时把命中的那段文字标出来',
+  mainCrossBoard.includes('match-hint') && mainCrossBoard.includes('<mark class="hit">羽毛球</mark>'),
+  '');
 
 // 清空搜索：不应再出现理解条
 searchInput.value = '';

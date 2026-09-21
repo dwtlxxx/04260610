@@ -203,6 +203,18 @@ export const ICON = {
   chat: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.5 12c0 4.1-3.8 7.4-8.5 7.4-1 0-2-.2-2.9-.5L4 20.5l1.5-3.9C4.3 15.3 3.5 13.7 3.5 12 3.5 7.9 7.3 4.6 12 4.6s8.5 3.3 8.5 7.4z"/></svg>',
   flag: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 21V4.2M5.5 4.8h11l-1.8 3.6 1.8 3.6h-11"/></svg>',
   check: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 12.5l5 5 10-11"/></svg>',
+  /* —— 板块图标（左侧栏轨道用）——
+     原先沿用材料里的汉字简称（校 / 赛 / 学 / 招 / 活 / 生 / 时）充当图标，
+     在窄轨道里既不像图标、彼此也难以快速区分。这里换成统一的线性图标：
+     同一套 viewBox / 线宽 / 圆角端点，缩到 18px 仍清晰 */
+  boardAll: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="7" height="7" rx="2"/><rect x="13" y="4" width="7" height="7" rx="2"/><rect x="4" y="13" width="7" height="7" rx="2"/><rect x="13" y="13" width="7" height="7" rx="2"/></svg>',
+  boardOfficial: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.2l7 2.6v5.3c0 4-2.9 7.5-7 9.7-4.1-2.2-7-5.7-7-9.7V5.8z"/><path d="M9 12l2.2 2.2L15.4 10"/></svg>',
+  boardContest: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4h10v4.5a5 5 0 0 1-10 0z"/><path d="M7 5.5H4.6v1.6A3 3 0 0 0 7 10M17 5.5h2.4v1.6A3 3 0 0 1 17 10"/><path d="M12 13.5V17M8.6 20h6.8"/></svg>',
+  boardLearn: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5.5h6a2.5 2.5 0 0 1 2 2.5v11a2 2 0 0 0-2-2H4z"/><path d="M20 5.5h-6a2.5 2.5 0 0 0-2 2.5v11a2 2 0 0 1 2-2h6z"/></svg>',
+  boardRecruit: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="9.5" cy="8.5" r="3.2"/><path d="M3.8 20c.6-3.1 3-5 5.7-5s5.1 1.9 5.7 5"/><path d="M17.6 8.4v5M20.1 10.9h-5"/></svg>',
+  boardCampus: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3.8" y="5.5" width="16.4" height="14.2" rx="2.4"/><path d="M3.8 10h16.4M8.4 3.6v3.4M15.6 3.6v3.4"/><path d="M8.2 13.6h2.2M13.6 13.6h2.2M8.2 16.4h2.2"/></svg>',
+  boardStudent: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="9" r="3.4"/><path d="M5.5 20c.7-3.3 3.3-5.4 6.5-5.4s5.8 2.1 6.5 5.4"/></svg>',
+  boardTimeline: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4.2v15.6"/><circle cx="12" cy="7.6" r="1.7"/><circle cx="12" cy="13" r="1.7"/><circle cx="12" cy="18.2" r="1.7"/></svg>',
 };
 
 /* ============================================================

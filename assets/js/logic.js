@@ -961,6 +961,69 @@ export const SYNONYMS = {
   摄影: ['摄影志愿者', '拍照'],
   学习: ['学习小组', '自学', '资料'],
   线上: ['直播', '线上同步'],
+  /* —— 按反馈扩充（"拼音/缩写/近义词仍有很多搜不到"）——
+     原则：收"学生真会打的日常说法"，映射到材料里的正式表述。
+     每条都双向或就近覆盖，避免"搜 A 有、搜 A 的同义说法没有"的不对称。 */
+  回放: ['直播回放', '已结束', '录播'],
+  录播: ['回放', '直播回放'],
+  直播: ['线上', '回放'],
+  报名: ['登记', '意向登记'],
+  登记: ['报名', '意向登记'],
+  截止: ['截止时间', '报名截止'],
+  地点: ['场地', '位置'],
+  场地: ['地点', '场地待定'],
+  免费: ['无需报名'],
+  组会: ['组队', '搭子', '约'],
+  找队友: ['组队', '招募', '搭子'],
+  缺人: ['还缺', '招募'],
+  面试: ['选拔', '招新'],
+  招新: ['招募', '纳新', '招人'],
+  纳新: ['招新', '招募'],
+  社团: ['协会', '学生组织'],
+  协会: ['社团', '学会'],
+  学生会: ['学生组织', '学生会'],
+  干事: ['招募', '学生组织'],
+  奖学: ['奖学金'],
+  奖学金: ['奖学', '助学金'],
+  助学金: ['奖学金', '资助'],
+  交换: ['交流', '访学'],
+  留学: ['交换', '出国'],
+  考研: ['考研自习', '备考'],
+  保研: ['推免', '考研'],
+  四六级: ['英语', '等级考试'],
+  实习: ['就业', '岗位'],
+  就业: ['求职', '实习'],
+  求职: ['就业', '简历'],
+  简历: ['求职', '就业'],
+  篮球: ['体育运动', '球类'],
+  足球: ['体育运动', '球类'],
+  羽毛球: ['体育运动', '约球'],
+  乒乓球: ['体育运动', '球类'],
+  跑步: ['体育运动', '健身'],
+  健身: ['体育运动', '跑步'],
+  志愿者: ['志愿', '志愿服务'],
+  志愿服务: ['志愿', '公益'],
+  讲座会: ['讲座', '分享会'],
+  沙龙: ['讲座', '交流会'],
+  工作: ['实习', '就业'],
+  作品: ['参赛作品'],
+  提交: ['报名', '上传'],
+  材料: ['材料清单'],
+  设计: ['产品设计', '视觉'],
+  产品: ['产品设计', 'AI'],
+  人工智能: ['AI', '智能'],
+  ai: ['人工智能', 'AI'],
+  挑战: ['挑战赛', '竞赛'],
+  省赛: ['竞赛', '挑战赛'],
+  国赛: ['竞赛', '挑战赛'],
+  校赛: ['竞赛', '校内'],
+  零基础: ['不限基础', '新手'],
+  新手: ['零基础', '新生'],
+  新生: ['零基础', '大一'],
+  大一: ['新生'],
+  时间: ['活动时间'],
+  投入: ['时间投入'],
+  每周: ['每周固定'],
 };
 
 /* ============================================================
@@ -1150,8 +1213,14 @@ export function fuzzyScore(keyword, text) {
     }
   } else {
     /* 中文查询：只在"含汉字"的片段上做编辑距离，
-       避免与纯数字/拉丁片段（如 A402、2—4 人）产生无关匹配。 */
-    if (k.length >= 2) {
+       避免与纯数字/拉丁片段（如 A402、2—4 人）产生无关匹配。
+
+       ⚠ 这里要求查询长度 ≥ 3，是实测出来的精度修复：
+       中文两个字的信息量太低，"容忍 1 个错字"会命中一大片 —
+       搜「大一」时「大学生」只差一个字，于是 26 条里有 21 条被命中，
+       搜索看起来就"什么都搜得到、等于什么都没搜"。
+       两个字的中文查询交给上面的字面匹配（精确包含），够了。 */
+    if (k.length >= 3) {
       const cands = new Set([...segs, ...windowsOf(t, k.length)]);
       for (const cand of cands) {
         if (cand.length < 2) continue;
@@ -1280,6 +1349,84 @@ export function isFavored(state, item) {
 /** 兼容旧数据：把 localStorage 里可能混着数字的 id 列表统一成字符串 */
 export function normalizeIdList(list) {
   return Array.isArray(list) ? list.map((x) => String(x)) : [];
+}
+
+/* ============================================================
+ * 搜索可解释性：这条结果【为什么】命中
+ *
+ * 只说"共 N 条"解释不了用户看到的东西：搜「ymq」出现「周末羽毛球约球」，
+ * 标题里根本没有 ymq；搜「运动」出现一条羽毛球约球，也对不上字面。
+ * 所以逐条给出"命中在哪个字段 + 以什么方式命中 + 命中的原文片段"。
+ * ============================================================ */
+const MATCH_FIELDS = (item) => [
+  ['标题', item.title, 1.0],
+  ['标签', (item.tags || []).join(' '), 0.95],
+  ['主办方', item.org, 0.85],
+  ['地点', item.place, 0.85],
+  ['面向对象', item.audience, 0.8],
+  ['备注', item.notes, 0.7],
+  ['题目原文', item.raw, 0.6],
+];
+
+/** 逐条命中说明：字段名 + 命中方式（字面/拼音/近义/容错）+ 命中片段 */
+export function matchInfo(item, keyword) {
+  const kw = String(keyword || '').trim();
+  if (!kw || !item) return null;
+  const tokens = expandTokens(kw);
+  let best = null;
+  const consider = (info) => { if (!best || info.score > best.score) best = info; };
+
+  for (const tok of tokens) {
+    // 主词与近义词都试；近义词按 0.72 折算，与打分口径一致
+    const cands = [{ word: tok.main, isSyn: false }]
+      .concat(tok.all.slice(1).map((s) => ({ word: s, isSyn: true })));
+    for (const { word, isSyn } of cands) {
+      for (const [label, val, weight] of MATCH_FIELDS(item)) {
+        if (!val) continue;
+        const text = String(val);
+        const at = text.toLowerCase().indexOf(String(word).toLowerCase());
+        if (at >= 0) {
+          consider({
+            score: 100 * weight * (isSyn ? 0.72 : 1),
+            field: label, mode: isSyn ? 'synonym' : 'literal',
+            term: word, synFrom: isSyn ? tok.main : '',
+            start: at, length: String(word).length, text,
+          });
+          continue;
+        }
+        const fuzzy = fuzzyScore(word, text);
+        if (fuzzy > 0) {
+          consider({
+            score: fuzzy * weight * (isSyn ? 0.72 : 1),
+            field: label,
+            mode: /^[a-z]+$/.test(word) ? 'pinyin' : 'fuzzy',
+            term: word, synFrom: isSyn ? tok.main : '',
+            start: -1, length: 0, text,
+          });
+        }
+      }
+    }
+  }
+  return best;
+}
+
+/** 命中方式的短标签（展示在卡片上） */
+export const MATCH_MODE_LABEL = {
+  literal: '字面命中',
+  pinyin: '拼音 / 首字母',
+  synonym: '近义词',
+  fuzzy: '错字容错',
+};
+
+/** 命中片段（纯数据，不含 HTML）：交给视图层去转义与拼接，保持逻辑层不产出标记 */
+export function highlightMatch(info) {
+  if (!info || info.start < 0) return null;
+  const cut = (s, n, tail) => (s.length > n ? s.slice(0, n) + (tail ? '…' : '') : s);
+  return {
+    before: cut(info.text.slice(0, info.start), 16, true),
+    hit: info.text.slice(info.start, info.start + info.length),
+    after: cut(info.text.slice(info.start + info.length), 20, true),
+  };
 }
 
 export function summarize(list) {

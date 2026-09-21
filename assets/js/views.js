@@ -20,6 +20,7 @@ import {
   AI_KIND, AI_DISCLAIMER, AI_DISCLAIMER_LONG,
   relationsOf, hasRelations, diffBetween, RELATION, RELATION_LABEL,
   risksToAiEntry, explainSearch, isFavored,
+  matchInfo, MATCH_MODE_LABEL, highlightMatch,
 } from './logic.js';
 import {
   esc, h, ICON, statusBadge, statusClass, credibilityBadge, sourceTag, kindTag,
@@ -143,10 +144,20 @@ function searchHintBar(state, items) {
     ? h`<span class="sh-syn">近义词：${esc(info.synonyms.join('、'))}</span>`
     : '';
 
+  /* 如果用户原本停在某个板块 / 快捷筛选 / 标签里，搜索会跨出那个范围，
+     必须明确告诉他一件事：范围被我扩大了，否则他会以为"搜出来的东西跟板块不符"。 */
+  const narrowed = (state.board && state.board !== BOARD.ALL)
+    || (state.quick && state.quick !== 'all')
+    || (state.activeTags && state.activeTags.length);
+  const scope = narrowed
+    ? h`<span class="sh-scope">已在全部板块中搜索（原先限制在板块 / 快捷筛选 / 标签内）</span>`
+    : '';
+
   return h`<div class="search-hint">
     <span class="sh-lead">用「${esc(kw)}」找到 <b>${info.count}</b> 条</span>
     <span class="sh-modes">理解方式：${chips}</span>
     ${syn}
+    ${scope}
   </div>`;
 }
 
@@ -167,7 +178,7 @@ function searchEmptyHint(state) {
  *   放在 renderDesktop/renderMobile 里的话，打字时不会更新（等于没做）。
  */
 export function feedSection(state, dataset) {
-  const boardId = state.board || BOARD.ALL;
+  const boardId = activeBoardId(state);
   const items = itemsOfBoard(dataset, boardId);
   const isTimeline = boardId === BOARD.TIMELINE;
   const hint = searchHintBar(state, items);
@@ -508,7 +519,12 @@ export function aiInDetail(item, state) {
   if (!entries.length) return '';
   const open = state.aiPanel === 'detail';
   const autoCount = entries.filter((e) => String(e.id).startsWith('ai-auto-')).length;
-  return h`<section class="ai-embed">
+  /* ⚠ 展开/收起【不靠重新渲染弹层】，而是就地切换 .is-open。
+     原因：以前点击这里会走 setState → renderModal() → 整个弹层 innerHTML 被重建，
+     节点被换掉的那一瞬间整块内容闪一下（用户反馈的"AI 模块点击时闪烁"）。
+     所以正文始终渲染在 DOM 里，收起用 CSS 把高度压到 0；
+     点击只改类名与 aria，不重建任何节点。 */
+  return h`<section class="ai-embed ${open ? 'is-open' : ''}">
     <button class="ai-embed-head" data-action="ai-toggle" data-panel="detail" aria-expanded="${open}">
       <span class="ai-dock-icon" aria-hidden="true">✦</span>
       <span class="ai-embed-title">AI 整合与解读</span>
@@ -516,10 +532,12 @@ export function aiInDetail(item, state) {
       ${aiMark()}
       <span class="ai-dock-chevron" aria-hidden="true">${open ? '▾' : '▸'}</span>
     </button>
-    ${open ? h`<div class="ai-embed-body">
-      ${entries.map((e) => aiEntryBlock(e)).join('')}
-      <div class="ai-footer-note">${esc(AI_DISCLAIMER_LONG)}</div>
-    </div>` : h`<div class="ai-collapsed-hint">点击展开 AI 对这条信息的整合与质量解读。</div>`}
+    <div class="ai-embed-body-wrap">
+      <div class="ai-embed-body">
+        ${entries.map((e) => aiEntryBlock(e)).join('')}
+        <div class="ai-footer-note">${esc(AI_DISCLAIMER_LONG)}</div>
+      </div>
+    </div>
   </section>`;
 }
 
@@ -640,9 +658,45 @@ function tagRow(state, dataset) {
   </div>`;
 }
 
+/** 当前生效的板块 id。
+    ⚠ 有关键词时一律按"全部板块"取数：搜索必须跨板块，
+    否则用户停在某个板块里搜别的东西会一条都搜不到，而他还不知道原因。
+    这与 app.js 的 computeDataset 保持一致（那边搜索时同样忽略板块/快捷/标签）。 */
+function activeBoardId(state) {
+  const kw = (state.filters && state.filters.keyword || '').trim();
+  if (kw) return BOARD.ALL;
+  return state.board || BOARD.ALL;
+}
+
 /* ============================================================
  * 信息卡（区分官方 / 非官方）
  * ============================================================ */
+
+/**
+ * 搜索命中提示：告诉用户"这条为什么被搜出来"。
+ *
+ * 起因：搜 ymq 出现「周末羽毛球约球」这类结果时，标题里没有 ymq，
+ * 用户只会觉得"搜索很奇怪"。所以：
+ *   · 字面命中 → 直接标出命中的那段文字（<mark>）
+ *   · 非字面命中（拼音/首字母/近义词/错字）→ 写明命中方式 + 命中在哪个字段
+ * 只在与当前关键词相关时渲染，平时不占位。
+ */
+function matchHint(item, state) {
+  const kw = (state.filters && state.filters.keyword || '').trim();
+  if (!kw) return '';
+  const info = matchInfo(item, kw);
+  if (!info) return '';
+  const mode = MATCH_MODE_LABEL[info.mode] || info.mode;
+  const lit = highlightMatch(info);
+  const where = lit
+    ? h`命中「${esc(lit.before)}<mark class="hit">${esc(lit.hit)}</mark>${esc(lit.after)}」`
+    : h`${esc(mode)} 命中「${esc(info.field)}」`;
+  return h`<div class="match-hint">
+    <span class="mh-tag">${esc(mode)}</span>
+    <span class="mh-text">${where}</span>
+    ${info.synFrom ? h`<span class="mh-syn">由「${esc(info.synFrom)}」扩展</span>` : ''}
+  </div>`;
+}
 
 function infoCard(item, state) {
   const fav = isFavored(state, item);
@@ -659,6 +713,8 @@ function infoCard(item, state) {
     </div>
 
     <h3 class="card-title">${esc(item.title)}</h3>
+
+    ${matchHint(item, state)}
 
     <div class="card-meta">
       ${item.startText ? h`<span class="meta-item"><span class="icon">${ICON.clock}</span>${esc(item.startText)}${item.recurring ? h`<span class="fld-extra">${esc(item.recurring)}</span>` : ''}</span>` : ''}
@@ -761,7 +817,7 @@ function timelineView(state, dataset) {
 
 export function renderMobile(state, dataset) {
   const s = state.summarize(dataset);
-  const boardId = state.board || BOARD.ALL;
+  const boardId = activeBoardId(state);
   const boardItems = itemsOfBoard(dataset, boardId);
   const isTimeline = boardId === BOARD.TIMELINE;
   const onFeed = state.route === 'feed';
@@ -825,7 +881,7 @@ function bottomNav(state) {
 
 export function renderDesktop(state, dataset) {
   const s = state.summarize(dataset);
-  const boardId = state.board || BOARD.ALL;
+  const boardId = activeBoardId(state);
   const boardItems = itemsOfBoard(dataset, boardId);
   const isTimeline = boardId === BOARD.TIMELINE;
 
@@ -889,12 +945,27 @@ export function renderDesktop(state, dataset) {
 function boardNavPanel(state, dataset) {
   // 只列出真正的「板块」（时间线已提升为高层级视图切换，不在此处）
   const list = BOARDS.filter((b) => b.types === 'board');
+  /* 板块图标：轨道态只显示图标，所以图标必须能独立表意。
+     材料给的汉字简称（校/赛/学/招/活/生）在窄轨道里既不像图标也难区分，
+     这里换成统一风格的线性 SVG；未知板块仍回落到原字符，不会出现空白。 */
+  const iconOf = (id, fallback) => ({
+    [BOARD.ALL]: ICON.boardAll,
+    [BOARD.OFFICIAL]: ICON.boardOfficial,
+    [BOARD.CONTEST]: ICON.boardContest,
+    [BOARD.LEARN]: ICON.boardLearn,
+    [BOARD.RECRUIT]: ICON.boardRecruit,
+    [BOARD.CAMPUS]: ICON.boardCampus,
+    [BOARD.STUDENT]: ICON.boardStudent,
+    [BOARD.TIMELINE]: ICON.boardTimeline,
+  }[id] || esc(fallback));
   const rows = list.map((b) => {
     const count = b.id === BOARD.ALL ? dataset.length : itemsOfBoard(dataset, b.id).length;
     const on = state.route === 'feed' && state.board === b.id;
+    // title 让轨道态悬停能看到板块名（轨道里文字是隐藏的）
     return h`<button class="nav-link ${on ? 'is-active' : ''} ${b.official ? 'is-official' : ''}"
-        data-action="board" data-id="${esc(b.id)}">
-      <span class="nav-board-icon" aria-hidden="true">${esc(b.icon)}</span>
+        data-action="board" data-id="${esc(b.id)}" title="${esc(b.label)}"
+        aria-label="${esc(b.label)}">
+      <span class="nav-board-icon" aria-hidden="true">${iconOf(b.id, b.icon)}</span>
       <span class="nav-label">${esc(b.label)}</span>
       <span class="count">${count}</span>
     </button>`;

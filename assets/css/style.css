@@ -1,4 +1,4 @@
-/* ============================================================
+﻿/* ============================================================
  *  style.css —— 组件样式
  *
  *  铁律：本文件禁止出现硬编码色值，一律引用 tokens.css 的变量。
@@ -354,6 +354,31 @@ a:hover { text-decoration: underline; }
   overflow: hidden;
 }
 .card-title:hover { color: var(--brand); }
+
+/* 搜索命中提示：告诉用户"这条为什么被搜出来"（字面命中直接标出片段，其余写明方式与字段） */
+.match-hint {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+  margin: -2px 0 var(--sp-2);
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+}
+.mh-tag {
+  flex: none;
+  padding: 1px var(--sp-2);
+  border-radius: var(--r-pill);
+  background: var(--brand-soft);
+  color: var(--brand);
+  font-weight: var(--fw-semibold);
+}
+.mh-text { min-width: 0; overflow-wrap: anywhere; }
+.mh-syn, .sh-scope { color: var(--text-tertiary); }
+mark.hit {
+  padding: 0 2px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--brand) 22%, transparent);
+  color: inherit;
+  font-weight: var(--fw-semibold);
+}
 
 .card-meta { display: flex; flex-wrap: wrap; gap: var(--sp-3); margin-bottom: var(--sp-2); }
 .meta-item {
@@ -1677,7 +1702,19 @@ html[data-theme='dark'] {
 .ai-embed-head:hover { background: var(--ai-soft); }
 .ai-embed-title { font-size: var(--fs-sm); font-weight: var(--fw-semibold); }
 .ai-embed-count { font-size: var(--fs-xs); color: var(--text-tertiary); }
-.ai-embed-body { border-top: 1px solid var(--border); padding: var(--sp-3); }
+/* 正文始终在 DOM 里，收起时把高度压到 0 —— 这样展开/收起只需切类名，不必重建弹层节点。
+   用 grid-template-rows 0fr↔1fr 做高度动画：不需要 JS 量高度，也不用猜 max-height。 */
+.ai-embed-body-wrap {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 240ms cubic-bezier(.22,1,.36,1);
+}
+.ai-embed.is-open .ai-embed-body-wrap { grid-template-rows: 1fr; }
+.ai-embed-body-wrap > .ai-embed-body { overflow: hidden; min-height: 0; }
+/* 收起时正文被压到 0 高，但 border 与 padding 仍会占位（会露出一条分隔线），
+   所以分隔线与内边距只在展开态给。 */
+.ai-embed-body { padding: 0 var(--sp-3); }
+.ai-embed.is-open .ai-embed-body { border-top: 1px solid var(--border); padding: var(--sp-3); }
 
 /* 详情页质量提示区块：紧随标题，视觉上更醒目 */
 .quality-section {
@@ -1747,9 +1784,10 @@ html[data-theme='dark'] {
 }
 .is-just-updated { animation: justUpdated 1500ms ease-out; border-color: var(--brand) !important; }
 
-/* AI 面板展开 / 折叠：高度过渡，避免"突然出现"的割裂感 */
-.ai-dock-body,
-.ai-embed-body {
+/* AI 面板展开 / 折叠：高度过渡，避免"突然出现"的割裂感。
+   ⚠ .ai-embed-body 已从这条规则里移除：它现在是"常驻 DOM + 0fr↔1fr 展开"，
+   再套一个 scaleY 动画会与高度动画打架；详情里的淡入改由 JS 的 fadeInUp 负责。 */
+.ai-dock-body {
   transform-origin: top center;
   animation: expandIn 240ms cubic-bezier(.22,1,.36,1);
 }
@@ -1857,10 +1895,8 @@ html[data-theme='dark'] {
   overflow-x: hidden;                   /* 轨道态把文字裁掉，不产生横向滚动 */
   overflow-y: auto;
   z-index: 27;
-  /* 收起态背景透明：轨道整体落在 .shell 为它预留的留白里（不会压到内容），
-     透明就能让页面底部的色带一路延伸过来，左下角不会出现一块没被色带覆盖的灰条。
-     展开时才需要不透明（要盖住它压住的那部分内容），见下面的展开态规则。 */
-  background: transparent;
+  /* 背景在下面的「轨道样式」一节统一定义（页面底色 → 极淡品牌色的竖直渐变），
+     这里不写 background，避免两处声明互相覆盖、看不出谁生效。 */
   border-right: 1px solid var(--border);
   transition: width 240ms cubic-bezier(.22,1,.36,1), box-shadow 240ms ease;
   box-shadow: var(--shadow-sm);
@@ -1870,9 +1906,6 @@ html[data-theme='dark'] {
 .app[data-device='desktop'] .sidebar:hover,
 .app[data-device='desktop'] .sidebar:focus-within {
   width: var(--sidebar-w);
-  /* 立刻变不透明（不加 background 过渡）：否则展开动画的头一百毫秒会半透明，
-     被盖住的内容会从面板里"透出来"，看起来像脏了。 */
-  background: var(--bg-app);
   box-shadow: var(--shadow-lg);
 }
 
@@ -1906,6 +1939,45 @@ html[data-theme='dark'] {
 
 /* 轨道占位：侧栏是 fixed，不占文档流，所以由 shell 预留它的宽度 */
 .app[data-device='desktop'] .shell { padding-left: calc(var(--rail-w) + var(--sp-4)); }
+
+/* —— 轨道里的图标容器 ——
+   反馈："轨道太素，没有选中/悬停的容器感"。所以给每个图标一个圆角容器：
+   悬停有底色、当前板块有品牌色底 + 品牌色图标，视觉上"能点、且知道自己在哪"。
+   用 margin 居中而不是 justify-content，保证展开时图标不会横向跳。 */
+.nav-board-icon {
+  flex: none;
+  width: 34px; height: 34px;
+  display: grid; place-items: center;
+  border-radius: var(--r-md);
+  color: var(--text-secondary);
+  background: transparent;
+  transition: background var(--t-fast), color var(--t-fast), box-shadow var(--t-fast);
+}
+.app[data-device='desktop'] .sidebar .nav-link { padding: 4px; gap: var(--sp-2); }
+.app[data-device='desktop'] .sidebar .nav-link:hover .nav-board-icon {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.app[data-device='desktop'] .sidebar .nav-link.is-active .nav-board-icon {
+  background: var(--brand-soft);
+  color: var(--brand);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--brand) 26%, transparent);
+}
+/* 轨道态：链接本身不铺底色（底色交给图标容器），展开后再给整行高亮 */
+.app[data-device='desktop'] .sidebar .nav-link { background: none; }
+.app[data-device='desktop'] .sidebar:hover .nav-link.is-active,
+.app[data-device='desktop'] .sidebar:focus-within .nav-link.is-active {
+  background: var(--brand-soft);
+}
+/* 轨道底色与整站同一套色系：用页面底色 → 极淡品牌色的竖直渐变，
+   和卡片、底部色带呼应（反馈："配色与整体不协调"）。 */
+.app[data-device='desktop'] .sidebar {
+  background: linear-gradient(180deg, var(--bg-app) 0%, color-mix(in srgb, var(--brand) 9%, var(--bg-app)) 100%);
+}
+.app[data-device='desktop'] .sidebar:hover,
+.app[data-device='desktop'] .sidebar:focus-within {
+  background: linear-gradient(180deg, var(--bg-app) 0%, color-mix(in srgb, var(--brand) 12%, var(--bg-app)) 100%);
+}
 
 /* ============================================================
  *  显示方式与排序切换栏（电脑端信息流上方）

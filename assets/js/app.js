@@ -22,7 +22,7 @@ import { initTheme, cycleTheme, getCurrentMode, resolveTheme, THEME_MODE_LABEL }
 import {
   esc, h, ICON, toast, statusBadge, sourceTag, kindTag, credibilityBadge,
   fieldGrid, riskList, seriesNote, roleNote, completenessMeter, missingLine,
-  pulse, flash, fadeInUp, busy, scrollToItem, staggerIn, fadeOut,
+  pulse, flash, fadeInUp, busy, scrollToItem, staggerIn,
   captureRect, expandFromRect, collapseToRect,
 } from './ui.js';
 import {
@@ -77,9 +77,18 @@ function computeDataset() {
   state.totalCount = all.length;
   state.tagCloud = tagCloud(all);
 
+  /* 有关键词时【跨全部板块搜索】。
+     原因：用户停在「竞赛」板块时搜「羽毛球」会一条都搜不到，
+     而他并不知道自己被困在某个板块里 —— 这是搜索体感差的主要来源之一。
+     搜索时忽略板块 / 快捷筛选 / 标签，只保留"来源、类型、适合谁"这类侧栏筛选，
+     并在搜索提示条里明确写出"已在全部板块中搜索"。 */
+  const searching = !!(state.filters && String(state.filters.keyword || '').trim());
+
   // 板块筛选
   let list;
-  if (state.board === BOARD.TIMELINE) {
+  if (searching) {
+    list = all;
+  } else if (state.board === BOARD.TIMELINE) {
     // 时间线：默认只显示官方信息，可通过范围切换增删来源
     list = state.timelineScope === 'official'
       ? all.filter((i) => i.isOfficial)
@@ -91,15 +100,17 @@ function computeDataset() {
   }
 
   // 快捷筛选
-  if (state.quick === 'urgent') list = list.filter((i) => i.status === STATUS.CLOSING);
-  else if (state.quick === 'standby') list = list.filter((i) => i.status === STATUS.STANDBY);
-  else if (state.quick === 'risk') list = list.filter((i) => i.credibility === 'suspect' || i.risks.length);
-  else if (state.quick === 'newbie') list = list.filter((i) => matchesFilters(i, { audience: ['newbie'] }, state.now));
-  else if (state.quick === 'today') list = list.filter((i) => matchesFilters(i, { time: ['today'] }, state.now));
-  else if (state.quick === 'rolling') list = list.filter((i) => i.rolling || i.kind === KIND.RESOURCE);
+  if (!searching) {
+    if (state.quick === 'urgent') list = list.filter((i) => i.status === STATUS.CLOSING);
+    else if (state.quick === 'standby') list = list.filter((i) => i.status === STATUS.STANDBY);
+    else if (state.quick === 'risk') list = list.filter((i) => i.credibility === 'suspect' || i.risks.length);
+    else if (state.quick === 'newbie') list = list.filter((i) => matchesFilters(i, { audience: ['newbie'] }, state.now));
+    else if (state.quick === 'today') list = list.filter((i) => matchesFilters(i, { time: ['today'] }, state.now));
+    else if (state.quick === 'rolling') list = list.filter((i) => i.rolling || i.kind === KIND.RESOURCE);
+  }
 
   // 标签筛选（多标签之间为"或"）
-  if (state.activeTags.length) {
+  if (!searching && state.activeTags.length) {
     list = list.filter((i) => i.tags.some((t) => state.activeTags.includes(t)));
   }
 
@@ -620,7 +631,27 @@ function handleAction(e, el) {
 
     case 'ai-toggle': {
       const panel = el.dataset.panel;
-      setState({ aiPanel: state.aiPanel === panel ? null : panel });
+      const next = state.aiPanel === panel ? null : panel;
+      // 只同步状态，不触发重渲染；下面按面板类型决定"就地切换"还是"整体重渲染"
+      state.aiPanel = next;
+      if (panel === 'detail') {
+        /* ⚠ 详情里的 AI 区块必须【就地】展开/收起，绝不能重建弹层。
+           历史缺陷：这里以前走 setState → renderModal() → 整个弹层 innerHTML 被替换，
+           节点一换整块内容闪一下 —— 就是用户反馈的"AI 模块点击时闪烁"。
+           现在正文一直在 DOM 里，切换只改类名与 aria 属性。 */
+        const box = el.closest('.ai-embed');
+        if (box) {
+          const isOpen = next === 'detail';
+          box.classList.toggle('is-open', isOpen);
+          el.setAttribute('aria-expanded', String(isOpen));
+          const chev = box.querySelector('.ai-dock-chevron');
+          if (chev) chev.textContent = isOpen ? '▾' : '▸';
+          if (isOpen) fadeInUp(box.querySelector('.ai-embed-body'), { distance: 6, duration: 200 });
+        }
+        return;
+      }
+      // 侧栏 AI 面板 / 手机抽屉：位置与结构会变，仍需整体重渲染
+      setState({ aiPanel: next });
       return;
     }
 
@@ -838,9 +869,15 @@ appEl.addEventListener('input', (e) => {
 
 /** 局部刷新：只替换结果区与统计条，保留顶栏 DOM 与输入焦点
  *
- *  动画：先让旧内容"上隐"（fadeOut），再替换并让新内容错落浮入。
- *  这样切换筛选/搜索时是连续的变化，而不是生硬闪烁。
+ *  ⚠ 这里以前每次输入都做「旧内容淡出 → 替换 → 新内容浮入」，
+ *  打字时整块结果反复淡出淡入，看起来就是在闪。现在：
+ *    ① 先算一次"结果 id 列表 + 关键状态"，与上一次完全相同就直接返回，
+ *       一个 DOM 都不动 —— 打字过程中大部分按键其实不改变结果，就不再闪了；
+ *    ② 真的变了才替换，并且不再对整块做 fadeOut（那是"闪"的主要来源），
+ *       只让新内容做一次轻微浮入。
  */
+let lastResultsKey = null;
+
 function refreshResults() {
   state.now = new Date();
   state.favorites = store.getFavorites();
@@ -850,22 +887,25 @@ function refreshResults() {
   const mainCol = appEl.querySelector('.main-col');
   if (!mainCol) return;
 
-  const renderInto = () => {
-    const parts = [];
-    if (state.route === 'feed' && state.board !== BOARD.TIMELINE) {
-      parts.push(statsBarHTML(dataset, state));
-    }
-    parts.push(feedSection(state, dataset));
-    mainCol.innerHTML = parts.join('');
-    animateFeed();
-  };
+  // 结果指纹：id 顺序 + 关键状态都进指纹，保证"看起来一样"才跳过
+  const key = [
+    state.route, state.board, state.quick, state.activeTags.join(','),
+    state.sort.key, state.sort.dir,
+    (state.filters.keyword || '').trim(),
+    JSON.stringify(state.filters),
+    state.favorites.join(','),
+    dataset.map((i) => i.id).join('|'),
+  ].join('§');
+  if (key === lastResultsKey) return;    // 结果没变 → 不动 DOM，自然就不闪
+  lastResultsKey = key;
 
-  const anim = fadeOut(mainCol, { duration: 120 });
-  if (anim && anim.finished) {
-    anim.finished.then(renderInto).catch(renderInto);
-  } else {
-    renderInto();
+  const parts = [];
+  if (state.route === 'feed' && state.board !== BOARD.TIMELINE) {
+    parts.push(statsBarHTML(dataset, state));
   }
+  parts.push(feedSection(state, dataset));
+  mainCol.innerHTML = parts.join('');
+  animateFeed();
 }
 
 /* 侧栏复选框筛选 */
