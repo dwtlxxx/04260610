@@ -173,11 +173,15 @@
 │   ├── css/
 │   │   ├── tokens.css            # 设计令牌：双主题色板 + 尺寸体系
 │   │   └── style.css             # 组件样式（只引用令牌，无硬编码色值）
+│   └── audio/
+│       └── haiyuan.wav           # 背景音乐（由 tools/convert-audio.mjs 从 38.6MB 压到 11.8MB）
 │   └── js/
 │       ├── data.js               # 26 条题目信息（结构化，缺失字段一律 null）
 │       ├── pinyin.js             # 汉字 → 拼音 / 首字母查表（覆盖 26 条信息的全部用字）
 │       ├── lexicon.js            # 校园词库：把长句切成"可检索的词"，避免按窗口瞎匹配
 │       ├── logic.js              # 纯函数层：状态推导 / 系列合并 / 风险引擎 / 完整度 / 智能搜索
+│       ├── music.js              # 背景音乐引擎：播放控制 / Web Audio 频谱 / 开关持久化
+│       ├── decor.js              # 律动装饰：底部波形 canvas + 卡片节奏变量（--beat）
 │       ├── store.js              # localStorage 持久化（含降级与异常保护）
 │       ├── theme.js              # 主题解析与应用（三态）
 │       ├── ui.js                 # 与设备无关的公共渲染件 + XSS 转义 + 容器变换动画
