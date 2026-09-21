@@ -21,9 +21,10 @@
  *   node tools/check-anim.mjs 375 1024 1920        # 指定宽度
  *   node tools/check-anim.mjs --url https://dwtlxxx.github.io/04260610/
  *
- * 三种形态的弹层都【居中】，但可用宽度与限宽不同，所以仍需逐个宽度验证：
- *   <768px  手机：居中浮层（四周留白、宽度 = 屏宽 - 边距）
- *   ≥1024px 电脑：居中对话框（限宽 760 / 980px）
+ * 三种形态的弹层位置并不相同，所以必须逐个宽度验证：
+ *   <1024px 手机/平板：贴底抽屉（左右贴边、仅上方圆角）
+ *   ≥1024px 电脑：居中对话框（限宽 760 / 980px、四周留白）
+ * 脚本按页面自己判定的 device 选择对应断言，不靠宽度猜断点。
  */
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync } from 'node:fs';
@@ -115,6 +116,14 @@ try {
       reduced: window.matchMedia('(prefers-reduced-motion: reduce)').matches,
       vw: window.innerWidth,
       vh: window.innerHeight,
+      // 用应用自己判定的形态，而不是拿宽度猜断点（app.js 里 <1024px 都算手机）
+      device: (document.querySelector('.app') || {}).dataset
+        ? document.querySelector('.app').dataset.device : '',
+      radius: {
+        top: cs.borderTopLeftRadius,
+        bottom: cs.borderBottomLeftRadius,
+      },
+      maxWidth: cs.maxWidth,
     };`);
 
   const load = async () => {
@@ -127,8 +136,9 @@ try {
     await cdp.send('Emulation.setDeviceMetricsOverride', {
       width: w, height: w < 768 ? 812 : 900, deviceScaleFactor: 1, mobile: w < 768,
     });
-    console.log(`=== ${w}px　${w < 768 ? '手机（居中浮层）' : w < 1024 ? '平板' : '电脑（居中对话框）'} ===`);
     await load();
+    const device = await ev(`return (document.querySelector('.app') || document.documentElement).dataset.device || '?';`);
+    console.log(`=== ${w}px　（应用判定形态：${device === 'desktop' ? '电脑 → 居中对话框' : '手机 → 贴底抽屉'}） ===`);
     ok('页面默认不是"减少动效"（否则下面测的是另一条分支）', (await panelState()) === null);
     // 强制成"用户没有要求减少动效"，否则本产品会跳过全部动画
     await cdp.send('Emulation.setEmulatedMedia', {
@@ -168,18 +178,39 @@ try {
       Math.abs(first.height - card.height) < Math.abs(last.height - card.height),
       `起点 ${first.width}x${first.height}，卡片 ${card.width}x${card.height}，终点 ${last.width}x${last.height}`);
 
-    /* 二级卡片（详情面板）最终必须【居中】—— 手机端原先是从底部升起的抽屉，
-       现已改为与电脑端一致的居中浮层。这里直接量面板中心与视口中心的偏差。 */
-    const cx = last.left + last.width / 2;
-    const cy = last.top + last.height / 2;
-    ok('二级卡片水平居中', Math.abs(cx - last.vw / 2) <= 1,
-      `面板中心 x=${Math.round(cx)}，视口中心 x=${Math.round(last.vw / 2)}`);
-    ok('二级卡片垂直居中', Math.abs(cy - last.vh / 2) <= 1,
-      `面板中心 y=${Math.round(cy)}，视口中心 y=${Math.round(last.vh / 2)}`);
-    ok('面板四周留有边距（不贴屏幕边）',
-      last.left >= 8 && last.top >= 8
-      && last.left + last.width <= last.vw - 8 && last.top + last.height <= last.vh - 8,
-      `上下左右留白 ${last.top} / ${last.vh - last.top - last.height} / ${last.left} / ${last.vw - last.left - last.width}`);
+    /* 二级卡片的最终位置按形态分两套，这里用【应用自己判定的 device】来断言，
+       而不是拿宽度猜断点（app.js 里 <1024px 都算手机形态）：
+         手机：贴底抽屉 —— 左右贴边、底边贴屏幕底、只有上方两角是圆的
+         电脑：居中对话框 —— 面板中心与视口中心重合、四周留白
+       两套都复用同一份"从卡片长出来"的容器变换，所以动画断言是共用的。 */
+    const isDesktop = last.device === 'desktop';
+    if (isDesktop) {
+      const cx = last.left + last.width / 2;
+      const cy = last.top + last.height / 2;
+      ok('电脑端：二级卡片居中',
+        Math.abs(cx - last.vw / 2) <= 1 && Math.abs(cy - last.vh / 2) <= 1,
+        `面板中心 ${Math.round(cx)},${Math.round(cy)}　视口中心 ${Math.round(last.vw / 2)},${Math.round(last.vh / 2)}`);
+      ok('电脑端：四周留白（不贴屏幕边）',
+        last.left >= 8 && last.top >= 8
+        && last.left + last.width <= last.vw - 8 && last.top + last.height <= last.vh - 8,
+        `上下左右留白 ${last.top} / ${last.vh - last.top - last.height} / ${last.left} / ${last.vw - last.left - last.width}`);
+      ok('电脑端：四角均为圆角', parseFloat(last.radius.bottom) > 0, `下圆角 ${last.radius.bottom}`);
+      /* 详情面板用的是加宽变体（modal-wide，980px）。
+         这条断言专门守住"选择器特异性"：桌面端 .modal 的 max-width 若把 .modal-wide 压住，
+         面板会静默变窄 —— 曾经真的发生过（`.app[...]` 死选择器修好后，760px 才开始生效）。 */
+      ok('电脑端：详情面板仍使用加宽宽度（980px，未被 760px 压回）',
+        last.maxWidth === '980px', `computed max-width = ${last.maxWidth}`);
+    } else {
+      ok('手机端：抽屉贴底（左右贴边、底部贴屏幕底）',
+        last.left === 0 && last.width === last.vw && Math.abs(last.top + last.height - last.vh) <= 1,
+        `left=${last.left} width=${last.width}/${last.vw} 底边=${last.top + last.height}/${last.vh}`);
+      ok('手机端：只有上方两角是圆角（抽屉外观）',
+        parseFloat(last.radius.top) > 0 && parseFloat(last.radius.bottom) === 0,
+        `上圆角 ${last.radius.top} / 下圆角 ${last.radius.bottom}`);
+      ok('手机端：抽屉高度不超过 92vh（顶部留出可点遮罩的区域）',
+        last.height <= last.vh * 0.92 + 1,
+        `高度 ${last.height} / 上限 ${Math.round(last.vh * 0.92)}`);
+    }
     ok('面板表面全程不透明（不能透过面板看到背后的信息流）',
       samples.every((s) => s.opacity === 1), samples.map((s) => s.opacity).join(','));
     ok('内容从透明淡入（盖住缩放形变）',

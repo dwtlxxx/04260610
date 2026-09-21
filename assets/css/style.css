@@ -597,20 +597,28 @@ a:hover { text-decoration: underline; }
 /* ============================================================
  *  弹层（详情 / 发布 / 筛选）
  *
- *  布局：二级卡片（详情面板）在【所有形态下都居中】—— 手机端原先是从底部升起的
- *        抽屉，已按反馈改为居中浮层，与电脑端一致。
- *        居中还顺带让"从卡片长出来"的容器变换更好看：面板宽度不再等于屏宽，
- *        缩放比更接近 1，鼠标/手指点击的卡片与面板之间的空间关系更连续。
+ *  布局按形态分两套（断点与 app.js 的 currentDeviceFromViewport 一致：<1024px 为手机）：
+ *    手机（<1024px）：二级卡片从底部升起，贴底铺满宽度的【抽屉】，只有上方两角是圆的。
+ *    电脑（≥1024px）：【居中对话框】，限宽、四角圆角、四周留白。
+ *  两套都复用同一套"从卡片长出来 / 缩回卡片"的容器变换：动画是按真实矩形算的，
+ *  所以抽屉与居中共用一份 JS 逻辑，不需要分支。
  * ============================================================ */
 .modal-host { position: relative; z-index: 100; }
 .modal-mask {
   position: fixed; inset: 0;
   background: var(--overlay);
-  display: flex; align-items: center; justify-content: center;
-  padding: var(--sp-4);            /* 四周留白，面板不贴屏幕边 */
+  display: flex;
+  align-items: flex-end;           /* 手机端：贴底抽屉 */
+  justify-content: center;
   animation: fade var(--t-base);
 }
-.app[data-device='desktop'] .modal-mask { padding: var(--sp-6); }
+/* ⚠ 这里必须用 [data-device='desktop']（属性挂在 <html> 上），
+   不能写成 .app[data-device='desktop'] —— #modal-host 是 #app 的兄弟节点，
+   带 .app 前缀的这类选择器永远匹配不到，弹层会静默沿用手机端规则。 */
+[data-device='desktop'] .modal-mask {
+  align-items: center;             /* 电脑端：居中 */
+  padding: var(--sp-6);
+}
 
 @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
 
@@ -622,15 +630,23 @@ a:hover { text-decoration: underline; }
 .modal {
   background: var(--bg-elevated);
   width: 100%;
-  max-width: 100%;
-  max-height: 100%;                /* 由遮罩的内边距决定实际上限，保证上下都留出空隙 */
+  max-height: 92vh;
   overflow-y: auto;
   border: 1px solid var(--border);
-  border-radius: var(--r-xl);      /* 居中浮层：四角一致，不再"上圆下方" */
+  border-radius: var(--r-xl) var(--r-xl) 0 0;   /* 抽屉：上圆下方 */
   box-shadow: var(--shadow-lg);
 }
-.app[data-device='desktop'] .modal { max-width: 760px; }
-.modal-wide { max-width: 980px; }
+[data-device='desktop'] .modal {
+  max-width: 760px;
+  max-height: 86vh;
+  border-radius: var(--r-xl);                   /* 居中对话框：四角一致 */
+}
+/* ⚠ 必须写成 .modal.modal-wide（两个类），不能只写 .modal-wide：
+   上面 [data-device='desktop'] .modal { max-width: 760px } 的特异性是 (0,2,0)，
+   而单独的 .modal-wide 只有 (0,1,0) —— 那样"详情面板加宽到 980"会被压回 760。
+   这个特异性问题正是"死选择器"修好之后才暴露出来的：以前桌面端那条规则压根不生效，
+   所以 .modal-wide 一直"恰好"能赢。 */
+.modal.modal-wide { max-width: 980px; }
 
 .modal-head {
   position: sticky; top: 0; z-index: 3;
@@ -652,6 +668,9 @@ a:hover { text-decoration: underline; }
   position: sticky; bottom: 0;
   display: flex; gap: var(--sp-2);
   padding: var(--sp-3) var(--sp-4);
+  /* 手机端抽屉的底栏会贴到屏幕最底，必须避开"home 指示条"区域，
+     否则真机上底部按钮会被系统手势条压住。env() 在无安全区的设备/电脑端为 0。 */
+  padding-bottom: calc(var(--sp-3) + env(safe-area-inset-bottom, 0px));
   background: var(--bg-elevated);
   border-top: 1px solid var(--border);
 }
@@ -765,8 +784,12 @@ a:hover { text-decoration: underline; }
  *  ⚠ 早期版本用了 body:has(.app[data-device=...]) 选择器，
  *    在部分浏览器不受支持且特异性不可靠，已改为变量方案。
  * ============================================================ */
-.app { --toast-bottom: calc(var(--bottomnav-h) + 24px + env(safe-area-inset-bottom, 0px)); }
-.app[data-device='desktop'] { --toast-bottom: 40px; }
+/* 定位偏移由 CSS 变量 --toast-bottom 控制（手机端要让开底部导航）。
+   ⚠ 变量必须定义在 <html> 上：提示条容器 #toast-host 是 #app 的兄弟节点，
+   定义在 .app 上的变量根本继承不到它，之前手机端一直是用的兜底值。 */
+:root { --toast-bottom: 40px; }
+[data-device='mobile'] { --toast-bottom: calc(var(--bottomnav-h) + 24px + env(safe-area-inset-bottom, 0px)); }
+[data-device='desktop'] { --toast-bottom: 40px; }
 
 .toast-host {
   position: fixed; left: 50%; bottom: var(--toast-bottom, 40px);

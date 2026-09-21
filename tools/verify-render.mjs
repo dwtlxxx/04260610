@@ -75,6 +75,33 @@ if (unusedKeyframes.length) {
 }
 
 /* ============================================================
+ * 1.6 "死选择器"检查：作用域前缀与目标元素不在同一棵树里
+ *
+ * 真实踩坑：#modal-host 与 #toast-host 是 #app 的【兄弟节点】（见 index.html），
+ * 但 CSS 里写了 `.app[data-device='desktop'] .modal-mask { align-items: center }`。
+ * 这条规则永远不可能命中，浏览器也不会报任何错 —— 结果是"手机端改回抽屉"之后
+ * 电脑端也变成了抽屉，直到用无头浏览器量面板位置才发现。
+ *
+ * 这里静态拦住同类写法：凡是用 .app[data-device=...] 作用域、却指向
+ * 弹层/提示条这类挂在 #app 之外的元素的选择器，一律报错。
+ * ============================================================ */
+const OUTSIDE_APP = /\.(modal|modal-mask|modal-host|toast|toast-host)\b/;
+// 先去掉注释再扫描：否则规则前面的注释文字会被当成选择器的一部分（首版就误报了一次）
+const cssNoComments = css.replace(/\/\*[\s\S]*?\*\//g, '');
+const deadScoped = [...cssNoComments.matchAll(/([^{}]*\.app\[data-device[^{}]*)\{/g)]
+  .map((m) => m[1].trim())
+  .filter((sel) => OUTSIDE_APP.test(sel.replace(/\.app\[data-device[^\]]*\]/g, '')));
+console.log('');
+console.log('=== 1.6 死选择器检查（作用域前缀是否覆盖目标元素）===');
+if (deadScoped.length) {
+  deadScoped.forEach((sel) => note('error',
+    `死选择器：${sel} —— 目标元素在 #app 之外，.app 前缀永远匹配不到`));
+  console.log(`  ✗ ${deadScoped.length} 条`);
+} else {
+  console.log('  ✓ 没有"作用域前缀覆盖不到目标元素"的规则');
+}
+
+/* ============================================================
  * 2. JS 中用到的 class 是否在 CSS 中有定义
  * ============================================================ */
 // 仅检查形如 class="a b c" 的静态字符串中出现的自定义类（排除框架/工具类与动态拼接）

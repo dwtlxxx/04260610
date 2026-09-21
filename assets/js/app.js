@@ -163,6 +163,12 @@ function render() {
   // 保持滚动位置，避免重渲染后跳回顶部
   const scrollY = window.scrollY;
   appEl.setAttribute('data-device', state.device);
+  /* ⚠ 同时把形态写到 <html> 上。
+     原因：#modal-host 与 #toast-host 是 #app 的【兄弟节点】而不是子节点
+     （见 index.html），所以 `.app[data-device='desktop'] .modal { ... }` 这类选择器
+     永远不可能命中 —— 弹层与提示条曾因此长期沿用手机端规则且完全不报错。
+     挂到 <html> 后，`.app` 内部与外部的元素都能按形态取样式。 */
+  document.documentElement.setAttribute('data-device', state.device);
   appEl.innerHTML = html;
   appEl.setAttribute('aria-busy', 'false');
   window.scrollTo(0, scrollY);
