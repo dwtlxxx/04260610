@@ -1252,6 +1252,36 @@ export function explainSearch(keyword, items) {
 }
 
 
+/* ============================================================
+ * id 归一化与用户态归属判断
+ *
+ * ⚠ 这里集中处理一个真实发生过的 bug：
+ *   条目数据里的 id 是【数字】（1、2、3…），而 DOM 的 dataset.id 读出来永远是
+ *   【字符串】（"1"），学生自己发布的条目 id 又是 'u' 前缀的字符串。
+ *   两边直接 includes() / === 比较，就会出现：
+ *     点收藏 → 提示"已加入我的日程" → localStorage 里也确实写进去了，
+ *     但星标不亮、"我的日程"永远是 0 条 —— 用户看到的就是"加入我的日程没反应"。
+ *   根因是类型不一致，所以统一在这里按字符串比较，调用方传数字或字符串都对。
+ * ============================================================ */
+
+/** id 是否相同（数字 / 字符串均视为同一 id） */
+export function sameId(a, b) {
+  if (a === null || a === undefined || b === null || b === undefined) return false;
+  return String(a) === String(b);
+}
+
+/** 该条目是否已加入「我的日程」（即已收藏） */
+export function isFavored(state, item) {
+  const list = (state && state.favorites) || [];
+  const id = item && item.id;
+  return list.some((f) => sameId(f, id));
+}
+
+/** 兼容旧数据：把 localStorage 里可能混着数字的 id 列表统一成字符串 */
+export function normalizeIdList(list) {
+  return Array.isArray(list) ? list.map((x) => String(x)) : [];
+}
+
 export function summarize(list) {
   const s = {
     total: list.length, closing: 0, standby: 0, open: 0, recurring: 0,

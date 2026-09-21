@@ -322,6 +322,244 @@ export function fadeOut(el, { duration = 130 } = {}) {
   }
 }
 
+/* ============================================================
+ * 容器变换：点卡片 → 详情面板"从卡片长出来"，收起时缩回那张卡片
+ *
+ * 为什么必须用 JS 而不是 CSS keyframes：
+ *   入场动画需要知道"点的是哪张卡片、它在屏幕的哪个位置"，
+ *   这个信息只有 JS 读得到（CSS 拿不到另一个元素的坐标）。
+ *
+ * 三个关键细节（都是实际实现时必须处理的坑）：
+ *   ① .modal 自己的 CSS 入场动画必须先去掉。CSS animation 与 WAAPI 同时
+ *      改 transform/opacity 会互相打架，表现为动画抽搐或完全不动。
+ *   ② transform-origin 必须是 0 0，否则 translate+scale 的坐标换算不成立。
+ *   ③ 非等比缩放（卡片 320×180 → 面板 980×800）会把文字压扁。
+ *      这是设计上的取舍：面板内容同时做淡入，动画前半段根本看不见字，
+ *      观众看到的是"一张卡片的表面长大成了详情面板"，而不是被压扁的文字。
+ *      因此这里只动 transform / opacity / border-radius，其余一律不碰。
+ * ============================================================ */
+
+/** 单位矩阵（读不到变换时的兜底） */
+const NO_MATRIX = { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 };
+
+/** 读取元素当前的计算样式，失败返回 null */
+function computedStyle(el) {
+  try {
+    return window.getComputedStyle ? window.getComputedStyle(el) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** 读取元素当前生效的变换矩阵（含正在播放的动画；无变换时为单位矩阵） */
+function currentMatrix(el) {
+  const cs = computedStyle(el);
+  const t = cs && cs.transform;
+  if (!t || t === 'none') return NO_MATRIX;
+  const m2 = /matrix\(([^)]+)\)/.exec(t);
+  if (m2) {
+    const [a, b, c, d, e, f] = m2[1].split(',').map(Number);
+    return { a, b, c, d, e, f };
+  }
+  const m3 = /matrix3d\(([^)]+)\)/.exec(t);
+  if (m3) {
+    const v = m3[1].split(',').map(Number);
+    return { a: v[0], b: v[1], c: v[4], d: v[5], e: v[12], f: v[13] };
+  }
+  return NO_MATRIX;
+}
+
+/** 把矩阵序列化成 transform 字符串 */
+function matrixCSS(m) {
+  return `matrix(${m.a},${m.b},${m.c},${m.d},${m.e},${m.f})`;
+}
+
+/** 把 "12px" / "var(--x)" 之类解析成数字，解析不出返回 null */
+function px(value) {
+  const n = parseFloat(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * 读取元素的屏幕矩形与四角圆角；读不到（元素不存在 / 尺寸为 0 / 无 DOM）时返回 null。
+ * 拿到的是"快照"而不是元素引用 —— 因为弹层内的关联跳转会重建 DOM，
+ * 那时原元素已经脱离文档，再 measure 只会得到 0。
+ */
+export function captureRect(el) {
+  if (!el || typeof el.getBoundingClientRect !== 'function') return null;
+  let r;
+  try {
+    r = el.getBoundingClientRect();
+  } catch {
+    return null;
+  }
+  if (!r || !r.width || !r.height) return null;
+  const cs = computedStyle(el);
+  const rad = (k) => (cs ? px(cs[k]) : null);
+  return {
+    left: r.left,
+    top: r.top,
+    width: r.width,
+    height: r.height,
+    radius: [
+      rad('borderTopLeftRadius'), rad('borderTopRightRadius'),
+      rad('borderBottomRightRadius'), rad('borderBottomLeftRadius'),
+    ],
+  };
+}
+
+/** 面板自己的四角圆角（动画终点用） */
+function ownRadius(el) {
+  const cs = computedStyle(el);
+  if (!cs) return [null, null, null, null];
+  return [
+    px(cs.borderTopLeftRadius), px(cs.borderTopRightRadius),
+    px(cs.borderBottomRightRadius), px(cs.borderBottomLeftRadius),
+  ];
+}
+
+/**
+ * 计算"把面板变换到目标矩形"所需的 transform。
+ *
+ * 从当前矩形反推"未变换时的布局矩形"（cur 减去矩阵里的位移、除以缩放），
+ * 这样即使关闭动画是在入场动画播放到一半时触发的（用户点了遮罩），
+ * 也能从"当前看到的画面"平滑接上，而不是先跳回原位再收缩。
+ */
+function transformToRect(panelEl, rect) {
+  let cur;
+  try {
+    cur = panelEl.getBoundingClientRect();
+  } catch {
+    return null;
+  }
+  if (!cur || !cur.width || !cur.height) return null;
+  const m = currentMatrix(panelEl);
+  const baseLeft = cur.left - m.e;
+  const baseTop = cur.top - m.f;
+  const baseW = m.a ? cur.width / m.a : cur.width;
+  const baseH = m.d ? cur.height / m.d : cur.height;
+  const dx = rect.left - baseLeft;
+  const dy = rect.top - baseTop;
+  const sx = baseW ? rect.width / baseW : 1;
+  const sy = baseH ? rect.height / baseH : 1;
+  return `translate(${dx}px, ${dy}px) scale(${sx}, ${sy})`;
+}
+
+/** 组装圆角关键帧字段；任一侧读不到具体数值就整体不加圆角动画 */
+function radiusFrame(fromRad, toRad) {
+  const keys = [
+    'borderTopLeftRadius', 'borderTopRightRadius',
+    'borderBottomRightRadius', 'borderBottomLeftRadius',
+  ];
+  const frame = {};
+  for (let i = 0; i < 4; i++) {
+    if (fromRad[i] === null || toRad[i] === null) return {};
+    frame[keys[i]] = `${fromRad[i]}px`;
+  }
+  return frame;
+}
+
+/** 动画是否可用（减少动效 / 无 WAAPI / 元素不存在 → 不可用） */
+function canAnimate(el) {
+  return !!el && !reduceMotion() && typeof el.animate === 'function';
+}
+
+/** 统一收尾：动画结束或出错都要 resolve，绝不阻塞弹层的关闭清理 */
+function settle(anims) {
+  return Promise.all(anims.map((a) => (a && a.finished ? a.finished.catch(() => {}) : Promise.resolve())));
+}
+
+/** 让面板的内容淡入/淡出（盖住非等比缩放期间的形变） */
+function fadeChildren(panelEl, { duration, to, delay = 0 }) {
+  if (!panelEl || !panelEl.children) return [];
+  const frames = to === 0
+    ? [{ opacity: 1 }, { opacity: 0, offset: 0.55 }, { opacity: 0 }]
+    : [{ opacity: 0 }, { opacity: 0, offset: 0.3 }, { opacity: 1 }];
+  // 展开：只需要盖住延时那段（backwards），结束后交还给正常样式
+  // 收起：必须保持到 DOM 被移除（forwards），否则最后一帧会闪回不透明
+  const opts = { duration, easing: 'ease-out', delay, fill: to === 0 ? 'forwards' : 'backwards' };
+  return [...panelEl.children].map((kid) => {
+    try { return kid.animate(frames, opts); } catch { return null; }
+  }).filter(Boolean);
+}
+
+/**
+ * 展开：面板从 rect（卡片的位置与尺寸）长大到自己的最终位置。
+ * @returns {Promise} 动画结束（或无需动画）后 resolve
+ */
+export function expandFromRect(rect, panelEl, { duration = 320 } = {}) {
+  if (!rect || !canAnimate(panelEl)) return Promise.resolve();
+
+  /* ⚠ 顺序很关键：先把 transform-origin 改成 0 0，再测量与计算。
+     否则"未变换布局矩形"的反推（cur - 矩阵位移）不成立。 */
+  const prevOrigin = panelEl.style ? panelEl.style.transformOrigin : '';
+  if (panelEl.style) panelEl.style.transformOrigin = '0 0';
+
+  const panelRadius = ownRadius(panelEl);
+  const from = transformToRect(panelEl, rect);
+  if (!from) {
+    if (panelEl.style) panelEl.style.transformOrigin = prevOrigin;
+    return Promise.resolve();
+  }
+  const rest = matrixCSS(currentMatrix(panelEl));   // 面板自己的常态（通常就是单位矩阵）
+
+  const frames = [
+    { transform: from, opacity: 0.85, ...radiusFrame(rect.radius, panelRadius) },
+    { transform: rest, opacity: 1, ...radiusFrame(panelRadius, panelRadius) },
+  ];
+
+  let anim;
+  try {
+    anim = panelEl.animate(frames, { duration, easing: 'cubic-bezier(.22,1,.36,1)' });
+  } catch {
+    if (panelEl.style) panelEl.style.transformOrigin = prevOrigin;
+    return Promise.resolve();
+  }
+  // 内容稍微延后淡入：先看到"表面长大"，再看到文字
+  const kids = fadeChildren(panelEl, { duration, to: 1, delay: Math.round(duration * 0.22) });
+
+  return settle([anim, ...kids]).then(() => {
+    // 动画结束后还原内联 transform-origin，避免影响后续布局与测量
+    if (panelEl.style) panelEl.style.transformOrigin = prevOrigin || '';
+  });
+}
+
+/**
+ * 收起：面板缩回 rect（那张卡片）。
+ * @param {object|null} rect 目标卡片矩形；为 null 时退化为"原地缩一下再淡出"
+ */
+export function collapseToRect(rect, panelEl, { duration = 260 } = {}) {
+  if (!canAnimate(panelEl)) return Promise.resolve();
+
+  const prevOrigin = panelEl.style ? panelEl.style.transformOrigin : '';
+  if (panelEl.style) panelEl.style.transformOrigin = '0 0';
+
+  const panelRadius = ownRadius(panelEl);
+  const now = matrixCSS(currentMatrix(panelEl));
+  const target = rect ? transformToRect(panelEl, rect) : null;
+
+  const frames = target
+    ? [
+      { transform: now, opacity: 1, ...radiusFrame(panelRadius, rect.radius) },
+      { transform: target, opacity: 0.5, ...radiusFrame(rect.radius, rect.radius) },
+    ]
+    // 找不到来源卡片（已被筛选掉 / 滚出屏幕）：缩回一点点 + 淡出
+    : [
+      { transform: now, opacity: 1 },
+      { transform: 'scale(.97)', opacity: 0 },
+    ];
+
+  let anim;
+  try {
+    anim = panelEl.animate(frames, { duration, easing: 'cubic-bezier(.4,0,1,1)', fill: 'forwards' });
+  } catch {
+    if (panelEl.style) panelEl.style.transformOrigin = prevOrigin;
+    return Promise.resolve();
+  }
+  const kids = fadeChildren(panelEl, { duration, to: 0 });
+  return settle([anim, ...kids]);
+}
+
 
 let toastTimer = null;
 

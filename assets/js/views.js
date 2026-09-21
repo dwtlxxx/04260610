@@ -19,7 +19,7 @@ import {
   aiEnabled, aiEntriesOf, aiEntryOf, aiOverview, aiChangeSummaries,
   AI_KIND, AI_DISCLAIMER, AI_DISCLAIMER_LONG,
   relationsOf, hasRelations, diffBetween, RELATION, RELATION_LABEL,
-  risksToAiEntry, explainSearch,
+  risksToAiEntry, explainSearch, isFavored,
 } from './logic.js';
 import {
   esc, h, ICON, statusBadge, statusClass, credibilityBadge, sourceTag, kindTag,
@@ -651,7 +651,7 @@ function tagRow(state, dataset) {
  * ============================================================ */
 
 function infoCard(item, state) {
-  const fav = state.favorites.includes(item.id);
+  const fav = isFavored(state, item);
   const urgent = item.status === STATUS.CLOSING || item.status === STATUS.STANDBY;
   const off = isOfficial(item);
   return h`<article class="card ${statusClass(item.status)} ${off ? 'is-official' : 'is-student'}"
@@ -774,7 +774,7 @@ export function renderMobile(state, dataset) {
 
   let body;
   if (state.route === 'mine') {
-    const favs = dataset.filter((i) => state.favorites.includes(i.id));
+    const favs = dataset.filter((i) => isFavored(state, i));
     const mine = dataset.filter((i) => i.isUserPost);
     body = h`<div class="section">
         <div class="section-title">我的日程 <span class="rule"></span>${favs.length} 条</div>
@@ -851,7 +851,7 @@ export function renderDesktop(state, dataset) {
 
   let main;
   if (state.route === 'mine') {
-    const favs = dataset.filter((i) => state.favorites.includes(i.id));
+    const favs = dataset.filter((i) => isFavored(state, i));
     const mine = dataset.filter((i) => i.isUserPost);
     main = h`<div class="panel">
         <div class="panel-title">${ICON.star} 我的日程<span class="count">${favs.length} 条 · 按截止时间排序</span></div>
@@ -1000,7 +1000,7 @@ function urgentPanel(state, dataset) {
 }
 
 function myPanel(state, dataset) {
-  const favs = dataset.filter((i) => state.favorites.includes(i.id));
+  const favs = dataset.filter((i) => isFavored(state, i));
   return h`<div class="panel">
     <div class="panel-title">${ICON.star} 我的日程<span class="count">${favs.length} 条</span></div>
     ${favs.length ? favs.slice(0, 4).map((i) => h`

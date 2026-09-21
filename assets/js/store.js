@@ -8,7 +8,12 @@
  *   2. 单一命名空间前缀，避免与其他页面冲突
  *   3. 对外暴露语义化方法，UI 层不直接碰 localStorage
  *   4. 用户发布的内容与题目数据使用不同 id 段（u 前缀），避免主键冲突
+ *   5. 所有以 id 为键/元素的存储一律按【字符串】归一 —— 见下面的 sid()
+ *
+ * 依赖方向：logic.js 不依赖本模块，因此这里引用它是安全的（无循环依赖）。
  */
+
+import { normalizeIdList } from './logic.js';
 
 const NS = 'zhku-opportunity:';
 
@@ -67,24 +72,35 @@ export const storage = { read, write, remove, canUseLS };
 
 const KEY_FAVORITES = 'favorites';
 
+/**
+ * 统一 id 形态：一律按字符串存取。
+ *
+ * 为什么：条目 id 在数据里是数字（1、2、3…），而 dataset.id 读出来是字符串（"1"），
+ * 用户发布条目又是 'u' 前缀字符串。只要有一处按数字写入、另一处按字符串比较，
+ * 收藏就会"写进去了但显示不出来"。这里把归一化收口在存储层，
+ * 任何调用方传数字或字符串都能正确命中，并且能读回历史遗留的混合数据。
+ */
+const sid = (id) => String(id);
+
 export function getFavorites() {
-  return read(KEY_FAVORITES, []);
+  return normalizeIdList(read(KEY_FAVORITES, []));
 }
 
 export function isFavorite(id) {
-  return getFavorites().includes(id);
+  return getFavorites().includes(sid(id));
 }
 
 /** 返回切换后的状态（true = 现已收藏） */
 export function toggleFavorite(id) {
+  const key = sid(id);
   const list = getFavorites();
-  const i = list.indexOf(id);
+  const i = list.indexOf(key);
   if (i >= 0) {
     list.splice(i, 1);
     write(KEY_FAVORITES, list);
     return false;
   }
-  list.push(id);
+  list.push(key);
   write(KEY_FAVORITES, list);
   return true;
 }
@@ -118,8 +134,9 @@ export function addUserItem(partial) {
 }
 
 export function updateUserItem(id, patch) {
+  const key = sid(id);
   const list = getUserItems();
-  const i = list.findIndex((x) => x.id === id);
+  const i = list.findIndex((x) => sid(x.id) === key);
   if (i < 0) return null;
   list[i] = { ...list[i], ...patch };
   write(KEY_USER_ITEMS, list);
@@ -127,7 +144,8 @@ export function updateUserItem(id, patch) {
 }
 
 export function removeUserItem(id) {
-  write(KEY_USER_ITEMS, getUserItems().filter((x) => x.id !== id));
+  const key = sid(id);
+  write(KEY_USER_ITEMS, getUserItems().filter((x) => sid(x.id) !== key));
 }
 
 /* ============================================================
@@ -141,18 +159,20 @@ export function getReports() {
 }
 
 export function hasReported(id) {
-  return getReports().some((r) => r.itemId === id);
+  const key = sid(id);
+  return getReports().some((r) => sid(r.itemId) === key);
 }
 
 export function addReport(itemId, reason) {
+  const key = sid(itemId);
   const list = getReports();
-  if (list.some((r) => r.itemId === itemId)) return false;
-  list.push({ itemId, reason, at: new Date().toISOString() });
+  if (list.some((r) => sid(r.itemId) === key)) return false;
+  list.push({ itemId: key, reason, at: new Date().toISOString() });
   write(KEY_REPORTS, list);
   // 累计到用户发布条目上，便于发布者看到反馈
   const userItems = getUserItems();
-  const target = userItems.find((x) => x.id === itemId);
-  if (target) updateUserItem(itemId, { reportCount: (target.reportCount || 0) + 1 });
+  const target = userItems.find((x) => sid(x.id) === key);
+  if (target) updateUserItem(target.id, { reportCount: (target.reportCount || 0) + 1 });
   return true;
 }
 
@@ -164,14 +184,15 @@ const KEY_COMMENTS = 'comments';
 
 export function getComments(itemId) {
   const all = read(KEY_COMMENTS, {});
-  return all[itemId] || [];
+  return all[sid(itemId)] || [];
 }
 
 export function addComment(itemId, text) {
+  const key = sid(itemId);
   const all = read(KEY_COMMENTS, {});
-  const list = all[itemId] || [];
+  const list = all[key] || [];
   list.push({ text, at: new Date().toISOString() });
-  all[itemId] = list;
+  all[key] = list;
   write(KEY_COMMENTS, all);
   return list;
 }

@@ -15,7 +15,7 @@ import {
   SOURCE, KIND, SOURCE_LABEL, KIND_LABEL, BOARD, BOARDS,
   buildDataset, getRawItems, visibleItems, smartSort, matchesFilters, summarize,
   parseTime, formatTime, STATUS, STATUS_LABEL,
-  itemsOfBoard, tagCloud, boardsOf, itemFuzzyScore, statusRank,
+  itemsOfBoard, tagCloud, boardsOf, itemFuzzyScore, statusRank, isFavored,
 } from './logic.js';
 import * as store from './store.js';
 import { initTheme, cycleTheme, getCurrentMode, resolveTheme, THEME_MODE_LABEL } from './theme.js';
@@ -23,6 +23,7 @@ import {
   esc, h, ICON, toast, statusBadge, sourceTag, kindTag, credibilityBadge,
   fieldGrid, riskList, seriesNote, roleNote, completenessMeter, missingLine,
   pulse, flash, fadeInUp, busy, scrollToItem, staggerIn, fadeOut,
+  captureRect, expandFromRect, collapseToRect,
 } from './ui.js';
 import {
   renderMobile, renderDesktop, statsBarHTML, feedSection,
@@ -52,6 +53,7 @@ const state = {
   favorites: [],
   now: new Date(),
   modal: null,                   // { type, id } | null
+  modalOriginRect: null,         // 打开弹层时来源卡片的位置快照（用于"从卡片长出来"）
   totalCount: 0,
   tagCloud: [],
   isWide: false,                 // 是否达到宽屏（三栏真正放得下）
@@ -228,6 +230,9 @@ function renderModal() {
   state._lastModalId = state.modal.id;
 
   const scrollTop = host.querySelector('.modal')?.scrollTop ?? 0;
+  // 每次重建弹层都推进一次"世代号"：关闭动画是异步收尾的，
+  // 若收尾期间用户又打开了新弹层，那次的收尾必须作废（见 closeModalAnimated）。
+  state._modalEpoch = (state._modalEpoch || 0) + 1;
   host.hidden = false;
   host.innerHTML = h`<div class="modal-mask" data-action="close-modal">
     <div class="modal ${isPublish ? '' : 'modal-wide'}" role="dialog" aria-modal="true"
@@ -238,12 +243,42 @@ function renderModal() {
   const modalEl = host.querySelector('.modal');
   if (modalEl) {
     // 同一弹层的局部刷新（如发送留言后）保持滚动位置，不重播入场动画
-    if (sameModal) modalEl.scrollTop = scrollTop;
-    else fadeInUp(modalEl, { distance: 14, duration: 240 });
+    if (sameModal) {
+      modalEl.scrollTop = scrollTop;
+    } else {
+      // 新开弹层：如果知道"点的是哪张卡片"，就让面板从那张卡片的位置和尺寸长出来。
+      // 快照用完即清（只播一次），避免后续刷新时重复播放。
+      const origin = state.modalOriginRect;
+      state.modalOriginRect = null;
+      if (origin) expandFromRect(origin, modalEl);
+      else fadeInUp(modalEl, { distance: 14, duration: 240 });   // 无来源时的兜底
+    }
   }
 }
 
-/** 关闭弹层：先播放退出动画，再移除 DOM（避免"点一下突然消失"的割裂感） */
+/**
+ * 关闭弹层时该缩回哪里。
+ * 优先用"当前这一条的卡片"（页面可能已滚动、或排版已变化），
+ * 找不到再退回打开时的快照；两者都不可用就返回 null（退化为原地淡出）。
+ */
+function modalReturnRect() {
+  const id = state._lastModalId;
+  if (id !== null && id !== undefined) {
+    let card = null;
+    try {
+      card = document.querySelector(
+        `.main-col [data-action="open-detail"][data-id="${CSS.escape(String(id))}"]`,
+      );
+    } catch { card = null; }
+    const rect = captureRect(card);
+    // 卡片滚出可视区域时不做"缩回屏幕外"的动画，那样看起来像飞走了
+    const vh = window.innerHeight || 0;
+    if (rect && (!vh || (rect.top < vh && rect.top + rect.height > 0))) return rect;
+  }
+  return state.modalOriginRect;
+}
+
+/** 关闭弹层：先播放退出动画（缩回来源卡片），再移除 DOM（避免"点一下突然消失"的割裂感） */
 function closeModalAnimated() {
   const host = document.getElementById('modal-host');
   const mask = host?.querySelector('.modal-mask');
@@ -252,22 +287,32 @@ function closeModalAnimated() {
     document.body.style.overflow = '';
     state._lastModalType = null;
     state._lastModalId = null;
+    state.modalOriginRect = null;
     return;
   }
   if (mask.classList.contains('is-closing')) return;   // 防止重复触发
-  mask.classList.add('is-closing');
+  mask.classList.add('is-closing');                    // 遮罩自身的淡出仍走 CSS
+  const epoch = state._modalEpoch || 0;
   const done = () => {
+    // ⚠ 收尾是异步的：如果这段时间里用户又点开了新的弹层（世代号已变），
+    //    这次收尾必须直接作废，否则会把刚打开的新弹层一起清掉。
+    if ((state._modalEpoch || 0) !== epoch) return;
     host.hidden = true;
     host.innerHTML = '';
     document.body.style.overflow = '';
     state._lastModalType = null;
     state._lastModalId = null;
+    state.modalOriginRect = null;
   };
-  // 用动画事件兜底超时，保证任何情况下都能清理
+  // 用动画 Promise 兜底超时，保证任何情况下都能清理
   let finished = false;
   const finish = () => { if (!finished) { finished = true; done(); } };
-  mask.addEventListener('animationend', finish, { once: true });
-  setTimeout(finish, 260);
+
+  const panel = mask.querySelector('.modal');
+  const anim = collapseToRect(modalReturnRect(), panel, { duration: 260 });
+  Promise.resolve(anim).then(finish).catch(finish);
+  // 兜底：动画被浏览器中断 / 被"减少动效"跳过时也要收尾
+  setTimeout(finish, 420);
 }
 
 /* ============================================================
@@ -275,7 +320,7 @@ function closeModalAnimated() {
  * ============================================================ */
 
 function detailHTML(item, allItems, rawItems) {
-  const fav = state.favorites.includes(item.id);
+  const fav = isFavored(state, item);
   const mine = item.isUserPost;
   const comments = store.getComments(item.id);
 
@@ -615,12 +660,15 @@ function handleAction(e, el) {
         return;
       }
       // 只更新弹层，不整页重渲染，避免列表滚动位置跳动
+      // 先拍下这张卡片的屏幕位置：弹层会从这里"长出来"，关闭时再缩回这里
+      state.modalOriginRect = captureRect(el);
       setState({ modal: { type: 'detail', id: el.dataset.id } }, { soft: true });
       renderModal();
       return;
     }
 
     case 'open-publish': {
+      state.modalOriginRect = captureRect(el);   // 从"发布"按钮/FAB 长出来
       setState({ modal: { type: 'publish' } });
       renderModal();
       requestAnimationFrame(updateLiveCheck);

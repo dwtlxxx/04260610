@@ -1,4 +1,4 @@
-﻿/* ============================================================
+/* ============================================================
  *  style.css —— 组件样式
  *
  *  铁律：本文件禁止出现硬编码色值，一律引用 tokens.css 的变量。
@@ -610,8 +610,12 @@ a:hover { text-decoration: underline; }
 .app[data-device='desktop'] .modal-mask { align-items: center; padding: var(--sp-6); }
 
 @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
-@keyframes slideUp { from { transform: translateY(24px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 
+/* ⚠ .modal 故意不写 animation：
+   入场/退场由 ui.js 的容器变换（expandFromRect / collapseToRect）用 JS 播放，
+   因为那需要知道"点的是哪张卡片、在屏幕的什么位置"，CSS 拿不到别的元素的坐标。
+   如果这里再加一条 CSS animation，两条动画会同时改 transform/opacity 而互相打架。
+   代价：不支持 Web Animations API 的浏览器没有入场动画（现代浏览器均支持）。 */
 .modal {
   background: var(--bg-elevated);
   width: 100%;
@@ -620,7 +624,6 @@ a:hover { text-decoration: underline; }
   border: 1px solid var(--border);
   border-radius: var(--r-xl) var(--r-xl) 0 0;
   box-shadow: var(--shadow-lg);
-  animation: slideUp var(--t-base);
 }
 .app[data-device='desktop'] .modal {
   max-width: 760px;
@@ -1056,8 +1059,26 @@ html[data-theme='dark'] {
   flex: 1; min-width: 0; color: var(--text-primary);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.pin-notice-reason { flex: none; font-size: var(--fs-xs); color: var(--text-tertiary); }
+/* ⚠ 这里原先是 flex: none（＝flex: 0 0 auto）。
+   flex-shrink: 0 意味着这一项永远保持"最大内容宽度"，而置顶理由是一整句中文
+   （例如「开发方向名额已满，仍在投递开发岗的同学需要及时调整」），
+   实测固定约 354px：于是【整页】在 320/360/375px 下被撑出 64/25/10px 的横向溢出，
+   连带 position: fixed 的底部导航、悬浮按钮都跟着跑到屏幕外（用户看到的就是"UI 错位"）。
+   改为可压缩 + 省略号：任何宽度下都不会再撑破整行。 */
+.pin-notice-reason {
+  flex: 0 1 auto; min-width: 0;
+  font-size: var(--fs-xs); color: var(--text-tertiary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 .pin-notice-arrow { flex: none; color: var(--text-tertiary); }
+/* 窄屏：置顶理由换到第二行完整显示。
+   挤在一行只会被截成省略号，而"为什么置顶"正是这条信息的价值所在；
+   换成两行后既看得全，又不会撑破页面。 */
+@media (max-width: 767px) {
+  .pin-notice { flex-wrap: wrap; row-gap: 2px; }
+  .pin-notice-reason { flex: 1 1 100%; white-space: normal; overflow: visible; }
+}
+
 .pin-zone-board { background: color-mix(in srgb, var(--bg-surface) 60%, var(--bg-sunken)); }
 
 /* ============================================================
@@ -1601,22 +1622,17 @@ html[data-theme='dark'] {
  *  动画与交互反馈
  * ============================================================ */
 
-/* 弹层入场 / 退场 */
+/* 弹层遮罩的淡入淡出（面板本体的进出场动画见下方说明：由 JS 播放） */
 @keyframes maskIn { from { opacity: 0; } to { opacity: 1; } }
 @keyframes maskOut { from { opacity: 1; } to { opacity: 0; } }
-@keyframes panelIn { from { opacity: 0; transform: translateY(18px) scale(.985); } to { opacity: 1; transform: none; } }
-@keyframes panelOut { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(12px) scale(.99); } }
-@keyframes sheetIn { from { transform: translateY(100%); } to { transform: translateY(0); } }
-@keyframes sheetOut { from { transform: translateY(0); } to { transform: translateY(100%); } }
 
 .modal-mask { animation: maskIn 200ms ease-out; }
 .modal-mask.is-closing { animation: maskOut 200ms ease-in forwards; pointer-events: none; }
-.modal { animation: panelIn 240ms cubic-bezier(.22,1,.36,1); }
-.modal-mask.is-closing .modal { animation: panelOut 200ms ease-in forwards; }
 
-/* 手机端抽屉：用位移而非缩放，符合底部抽屉的心理预期 */
-.app[data-device='mobile'] .modal { animation: sheetIn 260ms cubic-bezier(.22,1,.36,1); }
-.app[data-device='mobile'] .modal-mask.is-closing .modal { animation: sheetOut 200ms ease-in forwards; }
+/* ⚠ 这里原先还有 4 条规则（panelIn/panelOut/sheetIn/sheetOut）给 .modal 播放
+   入场与退场动画，现已移除。原因见 .modal 定义处的注释：
+   面板的进出场必须由 ui.js 的容器变换驱动（从卡片位置长出来 / 缩回卡片），
+   CSS 的 keyframes 同时作用于 transform 会与 JS 动画冲突。 */
 
 /* 处理中：按钮内旋转指示 */
 @keyframes spin { to { transform: rotate(360deg); } }

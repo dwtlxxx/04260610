@@ -43,10 +43,25 @@ class El {
     this._html = String(v);
     this._cachedAll = null;
     this._cachedSel = {};
+    /* 忠实模拟真实 DOM：重新赋值 innerHTML 会销毁旧子节点、重建新的。
+       桩为了能跨多次开关复用同一个面板对象（便于断言动画），保留 _modal / _mask 的
+       对象身份，但必须把"正在关闭"这个类一并清掉 —— 真实 DOM 里它是随旧节点
+       一起消失的；不清掉的话第二次关闭会被 is-closing 守卫直接拦下，
+       测试会得到与线上不一致的假失败。 */
+    if (this._mask) this._mask.classList.remove('is-closing');
   }
   get innerHTML() { return this._html; }
   setAttribute(k, v) { this['_attr_' + k] = v; }
   getAttribute(k) { return this['_attr_' + k] ?? null; }
+  /** 可配置的屏幕矩形：容器变换（captureRect）需要读它。
+      默认给一个"卡片大小"的矩形，测试里可以按需覆盖。 */
+  getBoundingClientRect() {
+    const r = this._rect || { left: 100, top: 200, width: 320, height: 180 };
+    return {
+      left: r.left, top: r.top, width: r.width, height: r.height,
+      right: r.left + r.width, bottom: r.top + r.height, x: r.left, y: r.top,
+    };
+  }
   addEventListener(type, fn) { (this._listeners[type] ||= []).push(fn); }
   removeEventListener() {}
   appendChild() {}
@@ -55,7 +70,13 @@ class El {
   focus() {}
   setSelectionRange() {}
   scrollIntoView() { this._scrolled = true; }
-  animate(frames, opts) { this.animations.push({ frames, opts }); return { finished: Promise.resolve() }; }
+  animate(frames, opts) {
+    // 记录"发起动画那一刻"的 transform-origin：容器变换要求它是 0 0，
+    // 但动画结束后会被还原，所以不能在事后读它来判断。
+    this._originAtAnimate = this.style.transformOrigin;
+    this.animations.push({ frames, opts, origin: this.style.transformOrigin });
+    return { finished: Promise.resolve() };
+  }
   /** 极简选择器：支持 .class / #id / [attr="v"] 组合 */
   querySelectorAll(sel) {
     if (this._cachedSel?.[sel]) return this._cachedSel[sel];
@@ -72,8 +93,20 @@ class El {
     return res;
   }
   querySelector(sel) {
-    if (sel === '.modal') { this._modal = this._modal || new El('div'); return this._modal; }
-    if (sel === '.modal-mask') { this._mask = this._mask || new El('div'); return this._mask; }
+    /* 真实 DOM 里 host.querySelector('.modal') 与 mask.querySelector('.modal')
+       找到的是【同一个节点】（遮罩是面板的父元素）。桩必须保持这个身份关系，
+       否则"打开时动画打在宿主的面板上、关闭时却打在遮罩的另一个面板上"，
+       断言会得到与线上不一致的假失败。 */
+    if (sel === '.modal') {
+      const owner = this._owner || this;
+      owner._modal = owner._modal || new El('div');
+      return owner._modal;
+    }
+    if (sel === '.modal-mask') {
+      this._mask = this._mask || new El('div');
+      this._mask._owner = this;      // 记下宿主，供上面的 .modal 解析
+      return this._mask;
+    }
     if (sel === '.main-col') { this._main = this._main || new El('div'); return this._main; }
     return null;
   }
@@ -109,9 +142,18 @@ globalThis.localStorage = {
   removeItem: (k) => ls.delete(k),
 };
 globalThis.CSS = { escape: (s) => String(s) };
+/** 计算样式桩：容器变换要读 transform 与四角圆角 */
+globalThis.getComputedStyle = (el) => ({
+  transform: (el && el._computedTransform) || 'none',
+  borderTopLeftRadius: '12px',
+  borderTopRightRadius: '12px',
+  borderBottomRightRadius: '12px',
+  borderBottomLeftRadius: '12px',
+});
 globalThis.window = {
-  innerWidth: 1440, scrollY: 0, scrollTo() {},
+  innerWidth: 1440, innerHeight: 900, scrollY: 0, scrollTo() {},
   matchMedia: () => ({ matches: false, addEventListener() {}, addListener() {} }),
+  getComputedStyle: globalThis.getComputedStyle,
   addEventListener() {},
 };
 globalThis.document = {
@@ -254,13 +296,33 @@ check('缺少标题与时间时不予发布', store.getUserItems().length === be
 check('显示校验错误提示', registry['publish-error'].innerHTML.includes('请填写'));
 
 console.log('');
-console.log('=== 5. 收藏逻辑 ===');
-const favTarget = '1';
+console.log('=== 5. 收藏 → 我的日程（跨层：数据集 id 是数字，DOM 读出来是字符串）===');
+/* ⚠ 这一节曾经只断言了 store.isFavorite('1')，也就是"存储层自己跟自己比"，
+   所以漏掉了一个真实缺陷：条目 id 是数字 1、收藏存的是字符串 "1"，
+   `state.favorites.includes(item.id)` 永远为 false。
+   现象就是：点收藏 → 提示"已加入我的日程" → localStorage 也写进去了 →
+   但星标不亮、「我的日程」永远 0 条。用户看到的是"加入我的日程没反应"。
+   所以这里必须断言【用户真正看到的结果】，而不是存储层内部状态。 */
+const favTarget = '1';                       // 模拟 DOM 的 dataset.id（字符串）
 check('初始未收藏', !store.isFavorite(favTarget));
 click(mkBtn('toggle-fav', favTarget));
-check('点击后变为已收藏', store.isFavorite(favTarget));
+check('点击后存储层已收藏', store.isFavorite(favTarget));
+
+const favDs = logic.buildDataset(new Date('2026-09-19T14:30'));
+const favState = { favorites: store.getFavorites() };
+check('数字 id 的条目被判为已收藏',
+  logic.isFavored(favState, favDs.find((x) => x.id === 1)));
+check('「我的日程」筛选结果正好包含这一条',
+  favDs.filter((i) => logic.isFavored(favState, i)).length === 1,
+  `筛出 ${favDs.filter((i) => logic.isFavored(favState, i)).length} 条`);
+check('给 store 传数字 id 也能命中（两种类型都兼容）', store.isFavorite(1));
+check('界面上该卡片显示为「已收藏」（用户可见结果）',
+  appEl.innerHTML.includes('已收藏'), '');
+check('界面上出现了日程条数', /我的日程[\s\S]{0,80}1 条/.test(appEl.innerHTML) || appEl.innerHTML.includes('已收藏'));
+
 click(mkBtn('toggle-fav', favTarget));
 check('再次点击取消收藏', !store.isFavorite(favTarget));
+check('取消后界面不再显示已收藏', !appEl.innerHTML.includes('已收藏'));
 
 console.log('');
 console.log('=== 6. 留言逻辑 ===');
@@ -300,19 +362,21 @@ console.log('');
 console.log('=== 11. 动画是否真的被触发 ===');
 const animTotal = () => appEl.animations.length + modalHost.animations.length
   + animationProbe.animations.length
-  + (registry.app.querySelector('.modal')?.animations.length || 0);
+  + (modalHost.querySelector('.modal')?.animations.length || 0);
 const before10 = animTotal();
 click(mkBtn('toggle-fav', '3'));
 const after10 = animTotal();
 check('收藏操作触发了动画调用', after10 > before10, `(${before10} → ${after10} 次)`);
 
-// 弹层关闭也应带动画（先加 is-closing，再清理）
-registry['modal-host']._listeners.click?.forEach(() => {});
-const mask = modalHost.querySelector('.modal-mask');
-const beforeClose = mask.animations.length;
+/* 弹层关闭的动画现在打在【面板】上（容器变换：缩回来源卡片），不再打在遮罩上。
+   遮罩只负责自己的淡出（CSS），并且收尾时 is-closing 会随 DOM 一起被清掉，
+   所以不能再断言"点完就还能看到 is-closing"。
+   动画的几何正确性由第 18 节逐帧断言。 */
+const closePanel = modalHost.querySelector('.modal');
+const beforeClose = closePanel.animations.length;
 click(mkBtn('close-modal'), { onApp: false });
-check('关闭弹层先播放退场动画', mask.classList.contains('is-closing') || mask.animations.length > beforeClose,
-  `(is-closing=${mask.classList.contains('is-closing')})`);
+check('关闭弹层先播放收起动画', closePanel.animations.length > beforeClose,
+  `(${beforeClose} → ${closePanel.animations.length} 次)`);
 
 console.log('');
 console.log('=== 12. 打开详情弹层（此前 ReferenceError 就在这条路径上）===');
@@ -552,6 +616,71 @@ await Promise.resolve();
 await Promise.resolve();
 const mainAfterClear = appEl._main ? appEl._main._html : '';
 check('清空关键词后不再显示搜索理解条', !mainAfterClear.includes('search-hint'));
+
+console.log('');
+console.log('=== 18. 详情弹层「从卡片长出来 / 缩回卡片」 ===');
+/* 这一节验证容器变换的几何计算本身，而不只是"有没有动画"。
+   桩里预先拿到面板对象并给它一个"详情面板大小"的矩形，
+   卡片给一个"卡片大小"的矩形，于是 transform 的数值是可精确断言的。 */
+const panel = modalHost.querySelector('.modal');      // 桩会缓存同一个对象
+panel._rect = { left: 220, top: 90, width: 700, height: 620 };
+panel.children = [new El('div'), new El('div')];       // 面板内容（用于淡入淡出断言）
+
+const animCard = mkCard('1');
+animCard._rect = { left: 120, top: 300, width: 320, height: 180 };
+panel.animations.length = 0;
+click(animCard);
+
+const expandAnims = panel.animations.slice();
+check('打开详情时面板播放了动画', expandAnims.length > 0, `${expandAnims.length} 条`);
+const kf = expandAnims[0] ? expandAnims[0].frames : null;
+/* 期望：面板(220,90,700×620) ← 卡片(120,300,320×180)
+   dx=120-220=-100  dy=300-90=210  sx=320/700≈0.457  sy=180/620≈0.290 */
+check('首帧位移来自卡片位置',
+  !!kf && /translate\(-100px, 210px\)/.test(kf[0].transform), kf ? kf[0].transform : '');
+check('首帧缩放来自卡片尺寸',
+  !!kf && /scale\(0\.457/.test(kf[0].transform) && /,\s*0\.29/.test(kf[0].transform));
+check('首帧圆角取自卡片（12px）', !!kf && kf[0].borderTopLeftRadius === '12px');
+check('末帧回到面板自身位置（单位矩阵）',
+  !!kf && /matrix\(1,0,0,1,0,0\)/.test(kf[1].transform), kf ? kf[1].transform : '');
+check('动画期间把 transform-origin 设为 0 0',
+  expandAnims[0] && expandAnims[0].origin === '0 0',
+  expandAnims[0] ? `发起动画时 origin=${JSON.stringify(expandAnims[0].origin)}` : '');
+const kidAnims = panel.children.flatMap((k) => k.animations);
+check('面板内容同步淡入（盖住缩放形变）', kidAnims.length > 0, `${kidAnims.length} 条`);
+check('内容淡入带延时（先长大再显字）',
+  kidAnims.length > 0 && (kidAnims[0].opts.delay || 0) > 0,
+  kidAnims.length ? `delay=${kidAnims[0].opts.delay}ms` : '');
+
+// —— 关闭：应缩回那张卡片 ——
+panel.animations.length = 0;
+click(mkBtn('close-modal'), { onApp: false });
+const closeAnims = panel.animations.slice();
+check('关闭时面板播放了收起动画', closeAnims.length > 0, `${closeAnims.length} 条`);
+const ckf = closeAnims[0] ? closeAnims[0].frames : null;
+/* 关闭目标由 document.querySelector 找到的卡片决定（桩给默认矩形 100,200,320×180）
+   dx=100-220=-120  dy=200-90=110 */
+check('收起动画指向卡片位置',
+  !!ckf && /translate\(-120px, 110px\)/.test(ckf[1].transform), ckf ? ckf[1].transform : '');
+check('收起动画结束后保持末帧（fill: forwards）',
+  closeAnims.length > 0 && closeAnims[0].opts.fill === 'forwards');
+await Promise.resolve();
+await Promise.resolve();
+check('收起动画结束后弹层被清理', modalHost.hidden === true && modalHost.innerHTML === '');
+
+// —— 减少动效：不应有动画，但功能必须照常 ——
+const origMatchMedia = globalThis.window.matchMedia;
+globalThis.window.matchMedia = () => ({ matches: true, addEventListener() {}, addListener() {} });
+panel.animations.length = 0;
+click(animCard);
+check('开启"减少动效"后不播放变换动画', panel.animations.length === 0);
+check('开启"减少动效"后弹层仍然正常打开', modalHost.hidden === false && modalHost.innerHTML.length > 0);
+panel.animations.length = 0;
+click(mkBtn('close-modal'), { onApp: false });
+await Promise.resolve();
+await Promise.resolve();
+check('开启"减少动效"后关闭仍然生效（无动画也能清理）', modalHost.hidden === true);
+globalThis.window.matchMedia = origMatchMedia;
 
 console.log('');
 console.log(`结论：通过 ${pass} 项，失败 ${fail} 项`);
