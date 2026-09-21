@@ -1,4 +1,4 @@
-﻿/**
+/**
  * check-layout.mjs —— 真实布局检测（无头 Edge + Chrome DevTools Protocol）
  *
  * 为什么需要它：本地那些自检脚本只能验证"结构对不对"（标签配平、类名、id、
@@ -216,6 +216,27 @@ try {
     });
     await cdp.send('Page.navigate', { url: URL_ });
     await sleep(1200);                       // 等应用渲染 + 断点重算完成
+    /* ⚠ 先确认"加载到的确实是我们这个应用"。
+       踩过：本地服务器没起时，浏览器会显示自己的错误页（.interstitial-wrapper），
+       脚本照样去量它的宽度，于是报出"768px 溢出 140px"这种与项目毫无关系的假失败。
+       宁可这里明确报"页面没加载出来"，也不要输出一份看不懂的报告。 */
+    const loaded = await cdp.send('Runtime.evaluate', {
+      expression: `JSON.stringify({
+        app: !!document.querySelector('.app'),
+        interstitial: !!document.querySelector('.interstitial-wrapper'),
+        title: document.title,
+      })`,
+      returnByValue: true,
+    });
+    const page = JSON.parse(loaded.result.value);
+    if (!page.app || page.interstitial) {
+      console.log(`=== ${w}px ===`);
+      note(false, '页面未正确加载（多半是本地服务器没起）',
+        `title="${page.title}" interstitial=${page.interstitial}`);
+      console.log('      请先运行：node tools/serve.cjs "<仓库绝对路径>" 8123');
+      report.push({ w, notLoaded: true });
+      continue;
+    }
     const { result } = await cdp.send('Runtime.evaluate', {
       expression: `${PATH_FN}\n${PROBE_FN}`, returnByValue: true,
     });

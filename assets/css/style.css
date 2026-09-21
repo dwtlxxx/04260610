@@ -314,7 +314,13 @@ a:hover { text-decoration: underline; }
  *  卡片（手机端主结构）
  * ============================================================ */
 .card {
-  background: var(--bg-surface);
+  /* 纵向 flex：底部操作区用 margin-top:auto 贴底，于是同一排卡片的"完整度 + 收藏"横向对齐 */
+  display: flex;
+  flex-direction: column;
+  /* 统一的最小高度：内容少的卡片不至于显得局促，整排更像"同样大小" */
+  min-height: 268px;
+  /* 渐变底色：自上而下由卡片面过渡到极淡的品牌色，整体仍是浅色 */
+  background: linear-gradient(180deg, var(--bg-surface) 0%, var(--card-grad-to) 100%);
   border: 1px solid var(--border);
   border-radius: var(--r-lg);
   padding: var(--sp-4);
@@ -341,6 +347,11 @@ a:hover { text-decoration: underline; }
   line-height: var(--lh-tight);
   color: var(--text-primary);
   cursor: pointer;
+  /* 标题最多两行：长标题不再把卡片撑高，整排高度更接近；完整标题在详情页里 */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 .card-title:hover { color: var(--brand); }
 
@@ -357,6 +368,8 @@ a:hover { text-decoration: underline; }
   display: flex; align-items: center; gap: var(--sp-2);
   padding-top: var(--sp-3);
   border-top: 1px solid var(--divider);
+  /* 贴到卡片底部：等高网格里同一排卡片的操作区因此横向对齐 */
+  margin-top: auto;
 }
 .card-foot .grow { flex: 1; }
 
@@ -1774,38 +1787,44 @@ html[data-theme='dark'] {
 .btn, .icon-btn, .tool-item, .nav-link { transition: transform 120ms ease, background var(--t-fast), color var(--t-fast), border-color var(--t-fast); }
 
 /* ============================================================
- *  双列信息流（电脑端）
+ *  多列信息流（电脑端）
  *
- *  需求：首页标题信息已经足够，不必用大表格占满宽度；
- *        改为双列，并让卡片高度不一产生"高低落差"。
+ *  历史：最早用 CSS 多列（column-count）刻意做"卡片高低不一"的错落感。
+ *  现按反馈改为【等高网格】，视觉上更整齐，并且顺带修掉两个多列布局的固有问题：
+ *    ① 多列是"自上而下"填充的：相关度第 1、2 条会分列在同一列里，
+ *       阅读顺序与排序结果对不上；grid 是"从左到右"填充，顺序即排序。
+ *    ② 多列会把卡片拆到两列（靠 break-inside: avoid 才勉强避免），
+ *       grid 的网格项天然不会被拆开，不需要这些补丁。
  *
- *  实现选择：用 CSS 多列（column-count）而非 grid ——
- *    grid 会把同一行两张卡拉伸到等高，落差就没了；
- *    多列是自上而下填充、卡片保持自身高度，天然形成错落效果。
+ *  等高怎么做到：grid 的默认 align-items: stretch 会把同一行的卡片
+ *  拉伸到该行最高的一张；配合 .card 变成纵向 flex、底部操作区 margin-top:auto，
+ *  整排卡片的"完整度 + 收藏"就会横向对齐，看起来是齐平的一整块。
  * ============================================================ */
 .feed-grid {
-  column-count: 1;
-  column-gap: var(--sp-4);
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--sp-4);
 }
 @media (min-width: 768px) {
-  .feed-grid { column-count: 2; }
+  .feed-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (min-width: 1600px) {
-  .feed-grid { column-count: 3; }
+  .feed-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
+/* 网格间距由 gap 负责，卡片自身不再留外边距（移动端不套 .feed-grid，靠 .card 的 margin-bottom） */
 .feed-grid > .card {
-  break-inside: avoid;              /* 关键：禁止卡片被拆分到两列 */
-  -webkit-column-break-inside: avoid;
-  page-break-inside: avoid;
-  margin: 0 0 var(--sp-4);
-  display: inline-block;            /* 配合多列，避免高度计算异常 */
-  width: 100%;
+  margin: 0;
+  height: 100%;
+  /* 统一最小高度：实测 26 张卡片的高度分布是 273~372px、众数正好 350，
+     所以取 350 把偏矮的那几行抬到与多数行一致 —— 不改任何内容，只是让网格看起来"一样大"。
+     超长内容（风险提示多的卡片）仍可自然超过 350，不会被裁掉。 */
+  min-height: 350px;
 }
 
-/* 手机端回落单列块级 */
-.app[data-device='mobile'] .feed-grid { column-count: 1; }
-.app[data-device='mobile'] .feed-grid > .card { display: block; }
+/* 移动端不套 .feed-grid（cardGrid 在手机端直接输出卡片），这里只是兜底：
+   真出现 .feed-grid 时保持单列。卡片在两端都是纵向 flex，底部操作区因此都能贴底对齐。 */
+.app[data-device='mobile'] .feed-grid { grid-template-columns: 1fr; }
 
 /* ============================================================
  *  左侧栏：图标轨道 + 悬停展开（电脑端）
