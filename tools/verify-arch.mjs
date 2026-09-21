@@ -276,7 +276,11 @@ const checks = [
     : ['AI 悬浮入口已渲染', /ai-fab/.test(html)],
   ...(isDesktop ? [
     ['排序栏已渲染', /viewmode-bar/.test(html) && /智能排序/.test(html)],
-    ['侧栏开关已渲染', /sidebar-toggle/.test(html)],
+    // 左侧栏改为"鼠标移到左边缘自动滑出"：热区与侧栏都必须渲染，
+    // 且顶栏右上角那个手动开合按钮必须已经删掉。
+    ['左侧栏与感应热区已渲染', /class="sidebar-hotzone"/.test(html) && /class="sidebar"/.test(html)],
+    ['已移除顶栏的侧栏开关按钮（改为鼠标悬停展开）',
+      !/sidebar-toggle/.test(html) && !/data-action="toggle-sidebar"/.test(html)],
     ['已移除表格切换（按反馈）', !/data-action="view-mode"/.test(html) && !/class="dtable"/.test(html)],
   ] : []),
 ];

@@ -50,7 +50,6 @@ const state = {
   aiPanel: null,                 // 展开中的 AI 面板：null | dock | sheet | detail
   filters: { keyword: '' },      // 侧栏 / 搜索
   sort: { key: 'smart', dir: 'asc' },
-  sidebarCollapsed: false,       // 电脑端：侧栏是否收起
   favorites: [],
   now: new Date(),
   modal: null,                   // { type, id } | null
@@ -528,7 +527,6 @@ function persistUIState() {
     quick: state.quick,
     activeTags: state.activeTags,
     sort: state.sort,
-    sidebarCollapsed: state.sidebarCollapsed,
   });
 }
 
@@ -695,18 +693,6 @@ function handleAction(e, el) {
       store.setViewMode(next);
       setState({ viewMode: next, device: next });
       toast(`已切换到${next === 'mobile' ? '手机版' : '电脑版'}布局`, 'info');
-      return;
-    }
-
-    case 'toggle-sidebar': {
-      setState({ sidebarCollapsed: !state.sidebarCollapsed });
-      // 展开时给侧栏面板加错落入场动画
-      requestAnimationFrame(() => {
-        const el = document.querySelector('.sidebar');
-        if (!el || state.sidebarCollapsed) return;
-        el.classList.add('is-animating');
-        setTimeout(() => el.classList.remove('is-animating'), 420);
-      });
       return;
     }
 
@@ -1028,7 +1014,7 @@ function init() {
     if (prefs.quick) state.quick = prefs.quick;
     if (Array.isArray(prefs.activeTags)) state.activeTags = prefs.activeTags;
     if (prefs.sort && prefs.sort.key) state.sort = prefs.sort;
-    if (typeof prefs.sidebarCollapsed === 'boolean') state.sidebarCollapsed = prefs.sidebarCollapsed;
+    // 侧栏不再有"收起/展开"这个可持久化的用户偏好：它已改为鼠标移到左边缘自动滑出
     render();
   } catch (err) {
     showFatal(err);

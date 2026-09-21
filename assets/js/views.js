@@ -71,12 +71,6 @@ function topbar(state, dataset) {
       </div>
 
       <div class="tb-actions">
-        <button class="icon-btn sidebar-toggle" data-action="toggle-sidebar"
-                title="${state.sidebarCollapsed ? '展开侧栏' : '收起侧栏'}"
-                aria-label="${state.sidebarCollapsed ? '展开侧栏' : '收起侧栏'}"
-                aria-expanded="${!state.sidebarCollapsed}">
-          <span aria-hidden="true">${state.sidebarCollapsed ? '»' : '«'}</span>
-        </button>
         <button class="icon-btn" data-action="toggle-theme"
                 title="主题：${esc(themeModeLabel)}（点击切换）" aria-label="切换主题，当前${esc(themeModeLabel)}">
           ${ICON.theme}<span class="mode-label">${esc(themeModeLabel)}</span>
@@ -835,7 +829,12 @@ export function renderDesktop(state, dataset) {
   const boardItems = itemsOfBoard(dataset, boardId);
   const isTimeline = boardId === BOARD.TIMELINE;
 
-  const sidebar = h`<aside class="sidebar ${state.sidebarCollapsed ? 'is-collapsed' : ''}">
+  /* 左侧栏改为"鼠标移到左边缘自动滑出"的浮层（原先靠顶栏按钮手动开合）。
+     热区必须是 .sidebar 的【前一个兄弟节点】：CSS 用 `:hover ~ .sidebar` 触发展开，
+     这样从热区滑到侧栏上的过程中两个 hover 条件有重叠，不会闪。
+     热区仅电脑端显示（见 CSS），手机端不会留下一条死区。 */
+  const sidebar = h`<div class="sidebar-hotzone" aria-hidden="true"></div>
+  <aside class="sidebar" aria-label="板块与筛选">
     ${boardNavPanel(state, dataset)}
     ${state.route === 'feed' ? filterPanel(state) : ''}
   </aside>`;

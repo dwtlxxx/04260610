@@ -462,13 +462,10 @@ a:hover { text-decoration: underline; }
  *  右栏在代码中名为 .aside-col（内含 AI 常驻栏 + aside-scroll），
  *  旧的 .aside 规则已废弃，避免与 .aside-col 的 display 规则冲突。
  * ============================================================ */
-.sidebar { display: none; }
+/* 手机端没有侧栏；电脑端的侧栏是"鼠标移到左边缘自动滑出"的浮层，见文末的
+   「左侧栏自动收放」一节。这里只声明两条通用的显隐规则。 */
+.sidebar, .sidebar-hotzone { display: none; }
 
-.app[data-device='desktop'] .sidebar {
-  display: block;
-  width: var(--sidebar-w); flex: none;
-  padding-top: var(--sp-5);
-}
 .app[data-device='desktop'] .main-col { padding-top: var(--sp-5); }
 
 .panel {
@@ -1744,42 +1741,62 @@ html[data-theme='dark'] {
 .app[data-device='mobile'] .feed-grid > .card { display: block; }
 
 /* ============================================================
- *  侧边栏展开 / 收起过渡动画
+ *  左侧栏自动收放（电脑端）
  *
- *  实现：宽度 + 位移 + 透明度联合过渡，配合 main-col 的 flex 变化，
- *        让"展开/收起"是连续动作而非突然跳变。
+ *  交互：鼠标移到屏幕左边缘 → 侧栏滑出；鼠标离开侧栏 → 自动收回。
+ *        原先靠顶栏右上角一个"«/»"按钮手动开合，已按反馈删除。
+ *
+ *  三个设计决定（都是为了"符合直觉"）：
+ *   ① 用 fixed 浮层而不是挤压布局：侧栏若在文档流里，展开时会挤压主区，
+ *      于是每次鼠标扫过左边，信息流都要重排（多列瀑布流还会整块跳），非常刺眼。
+ *      浮层只做 translateX，主区纹丝不动。
+ *   ② 触发展开靠"左边缘热区"（.sidebar-hotzone，.sidebar 的前一个兄弟节点）：
+ *      侧栏收起时 width 已为 0，没有可悬停的东西，必须留一条极窄的感应边。
+ *      用 `:hover ~ .sidebar` 选择器而不是 JS，鼠标扫过不会触发任何重渲染。
+ *   ③ 键盘可达性：`:focus-within` 同样触发展开 —— 否则 Tab 进侧栏链接时
+ *      焦点会落在屏幕外，看不见自己在哪。
  * ============================================================ */
-.sidebar {
-  transition: width 260ms cubic-bezier(.22,1,.36,1),
-              opacity 200ms ease,
-              transform 260ms cubic-bezier(.22,1,.36,1),
-              margin-right 260ms cubic-bezier(.22,1,.36,1);
-  transform-origin: left center;
+.app[data-device='desktop'] .sidebar-hotzone {
+  display: block;
+  position: fixed;
+  top: 0; left: 0; bottom: 0;
+  width: 16px;
+  z-index: 26;
 }
-.app[data-device='desktop'] .sidebar.is-collapsed {
-  width: 0;
+
+.app[data-device='desktop'] .sidebar {
+  display: block;
+  position: fixed;
+  top: var(--topbar-h);
+  bottom: 0;
+  /* 贴齐屏幕左边缘，而不是对齐居中的内容区：
+     侧栏是"鼠标扫到左边缘就滑出"的，如果超宽屏上把它推到内容左边缘，
+     指针停在 x=6 时面板却出现在 260px 之外，反而更不符合直觉。
+     贴边还顺带让位移计算变得干净（translateX(-100%) 就是完全移出屏幕，
+     不必去算居中留白，也不会踩到 100vw 含滚动条宽度的坑）。 */
+  left: 0;
+  width: var(--sidebar-w);
+  padding: var(--sp-4);
+  overflow-y: auto;
+  z-index: 27;
+  background: var(--bg-app);
+  border-right: 1px solid var(--border);
+  box-shadow: var(--shadow-lg);
+  /* 收起态：整体滑出屏幕左侧，并且不吃鼠标事件（否则会挡住主区左侧的点击） */
+  transform: translateX(-100%);
   opacity: 0;
-  transform: translateX(-12px);
-  margin-right: calc(-1 * var(--sp-5));
-  overflow: hidden;
   pointer-events: none;
+  transition: transform 260ms cubic-bezier(.22,1,.36,1), opacity 180ms ease;
 }
-.app[data-device='desktop'] .sidebar.is-collapsed > * { opacity: 0; }
-.sidebar > * { transition: opacity 180ms ease; }
 
-/* 展开时逐项浮入，形成错落感 */
-@keyframes panelSlideIn {
-  from { opacity: 0; transform: translateX(-10px); }
-  to { opacity: 1; transform: translateX(0); }
+/* 展开态：鼠标移到左边缘热区 / 鼠标已在侧栏上 / 键盘焦点进入侧栏 */
+.app[data-device='desktop'] .sidebar-hotzone:hover ~ .sidebar,
+.app[data-device='desktop'] .sidebar:hover,
+.app[data-device='desktop'] .sidebar:focus-within {
+  transform: translateX(0);
+  opacity: 1;
+  pointer-events: auto;
 }
-.sidebar.is-animating > .panel {
-  animation: panelSlideIn 260ms cubic-bezier(.22,1,.36,1) backwards;
-}
-.sidebar.is-animating > .panel:nth-child(2) { animation-delay: 60ms; }
-
-/* 侧栏开关按钮：仅电脑端出现 */
-.sidebar-toggle { display: none; }
-.app[data-device='desktop'] .sidebar-toggle { display: inline-grid; }
 
 /* ============================================================
  *  显示方式与排序切换栏（电脑端信息流上方）
@@ -1914,11 +1931,6 @@ html[data-theme='dark'] {
 /* 单行空间紧张时（768–1100px）隐藏品牌副标题，优先保证搜索框宽度 */
 @media (min-width: 768px) and (max-width: 1100px) {
   .brand-sub { display: none; }
-}
-
-/* 手机端：隐藏侧栏开关（没有侧栏可收） */
-@media (max-width: 767px) {
-  .sidebar-toggle { display: none !important; }
 }
 
 /* —— 桌面（>=1024px）—— */

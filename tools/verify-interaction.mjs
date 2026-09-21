@@ -474,9 +474,25 @@ check('主条目生效时间已按补充通知覆盖', merged.startAt === '2026-
 check('主条目生效地点已按补充通知覆盖', merged.place === '实验楼 A402', `实际 ${merged.place}`);
 
 console.log('');
-console.log('=== 14. 侧栏开合与排序 ===');
+console.log('=== 14. 左侧栏自动收放与排序 ===');
 // 找回首页（第 12 组把弹层打开了）
 click(mkBtn('close-modal'), { onApp: false });
+
+/* 左侧栏已按反馈改为"鼠标移到左边缘自动滑出"，顶栏的开关按钮被删除。
+   悬停效果本身由 CSS 实现（.sidebar-hotzone:hover ~ .sidebar），
+   桩里没有样式引擎，所以这里断言两件【结构上必须成立】的事：
+     ① 旧的手动开关与它的 action 已经彻底移除；
+     ② 热区存在，且必须是 .sidebar 的【前一个兄弟节点】——
+        否则 `~` 选择器匹配不到，悬停展开会静默失效。
+   真实的鼠标悬停行为在 tools/check-browser.mjs 里用真浏览器验证。 */
+const deskHtml = appEl.innerHTML;
+check('已移除顶栏的侧栏开关按钮',
+  !/sidebar-toggle/.test(deskHtml) && !/data-action="toggle-sidebar"/.test(deskHtml));
+check('侧栏与感应热区都已渲染',
+  /class="sidebar-hotzone"/.test(deskHtml) && /class="sidebar"/.test(deskHtml));
+check('热区是侧栏的前一个兄弟节点（悬停展开依赖这个相邻关系）',
+  /class="sidebar-hotzone"[^>]*>\s*<\/div>\s*<aside class="sidebar"|class="sidebar-hotzone"[^>]*><\/div><aside class="sidebar"/.test(deskHtml)
+  || /sidebar-hotzone[\s\S]{0,40}<aside class="sidebar"/.test(deskHtml));
 
 const readUI = () => {
   const raw = globalThis.localStorage.getItem('zhku-opportunity:ui-prefs');
@@ -486,8 +502,9 @@ const readUI = () => {
 const beforeSide = readUI().sidebarCollapsed === true;
 click(mkBtn('toggle-sidebar'));
 const afterSide = readUI().sidebarCollapsed === true;
-check('侧栏开关会改变并持久化状态', beforeSide !== afterSide,
-  `${beforeSide} → ${afterSide}`);
+check('点击已删除的 toggle-sidebar 不再产生任何副作用（动作已不存在）',
+  beforeSide === afterSide && !('sidebarCollapsed' in readUI()),
+  `ui-prefs 中是否还有 sidebarCollapsed: ${'sidebarCollapsed' in readUI()}`);
 
 // 排序（注意：排序按钮读的是 data-key，不是 data-id）
 const sortBtn = mkBtn('sort');
