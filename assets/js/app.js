@@ -187,6 +187,10 @@ function render() {
   // 信息流入场动画：错落上浮（落差感来自每项延迟不同 + 卡片本身高度不一）
   animateFeed();
 
+  /* 重渲染后按钮是新节点、类名回到默认（隐藏），必须按当前滚动位置重新同步一次，
+     否则"已经在页面底部"时按钮会消失，直到用户再滚一下才回来。 */
+  syncToTop();
+
   // 搜索框聚焦状态保持
   if (state.focusSearch) {
     const input = document.getElementById('search-input');
@@ -718,6 +722,18 @@ function handleAction(e, el) {
       return;
     }
 
+    case 'to-top': {
+      // 平滑回顶；系统开了"减少动效"就直接跳，避免长距离滚动动画让人不适
+      const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      try {
+        window.scrollTo({ top: 0, behavior: reduce ? 'auto' : 'smooth' });
+      } catch {
+        window.scrollTo(0, 0);
+      }
+      // 平滑滚动期间 scroll 事件会连续触发，最终由 syncToTop 把按钮收回去
+      return;
+    }
+
     case 'toggle-theme': {
       const next = cycleTheme();
       toast(`主题：${THEME_MODE_LABEL[next]}`, 'info');
@@ -1048,6 +1064,25 @@ window.addEventListener('unhandledrejection', (e) => {
   showFatal(e.reason || '未处理的 Promise 拒绝');
 });
 
+/* ============================================================
+ * 回到顶部按钮：滚过一定距离才出现
+ *
+ * 为什么用"渲染后同步 + 滚动时同步"两处，而不是只靠滚动监听：
+ * render() 会整体替换 appEl.innerHTML，按钮是新节点、类名会回到默认（隐藏）；
+ * 如果只在滚动里改类名，重渲染后按钮就会立刻消失，直到用户再滚一次。
+ * 所以 render() 末尾也要同步一次当前滚动位置对应的状态。
+ * ============================================================ */
+const TO_TOP_AFTER = 420;      // 滚过这么多像素才出现
+
+function syncToTop() {
+  const btn = appEl.querySelector('.to-top');
+  if (!btn) return;
+  const show = (window.scrollY || 0) > TO_TOP_AFTER;
+  btn.classList.toggle('is-visible', show);
+}
+
+window.addEventListener('scroll', syncToTop, { passive: true });
+
 function init() {
   try {
     initTheme();
@@ -1062,6 +1097,7 @@ function init() {
     if (prefs.sort && prefs.sort.key) state.sort = prefs.sort;
     // 侧栏不再有"收起/展开"这个可持久化的用户偏好：它已改为鼠标移到左边缘自动滑出
     render();
+    syncToTop();
   } catch (err) {
     showFatal(err);
     throw err;

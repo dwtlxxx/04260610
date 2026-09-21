@@ -215,6 +215,7 @@ export const ICON = {
   boardCampus: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3.8" y="5.5" width="16.4" height="14.2" rx="2.4"/><path d="M3.8 10h16.4M8.4 3.6v3.4M15.6 3.6v3.4"/><path d="M8.2 13.6h2.2M13.6 13.6h2.2M8.2 16.4h2.2"/></svg>',
   boardStudent: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="9" r="3.4"/><path d="M5.5 20c.7-3.3 3.3-5.4 6.5-5.4s5.8 2.1 6.5 5.4"/></svg>',
   boardTimeline: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4.2v15.6"/><circle cx="12" cy="7.6" r="1.7"/><circle cx="12" cy="13" r="1.7"/><circle cx="12" cy="18.2" r="1.7"/></svg>',
+  arrowUp: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5.6"/><path d="M6.4 11.2L12 5.6l5.6 5.6"/></svg>',
 };
 
 /* ============================================================

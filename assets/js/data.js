@@ -79,7 +79,7 @@ export const BOARD = {
  */
 export const BOARDS = [
   {
-    id: BOARD.ALL, label: '全部机会', short: '全部', icon: '◎',
+    id: BOARD.ALL, label: '全部内容', short: '全部', icon: '◎',
     official: false, types: 'aggregate',
     desc: '所有来源的信息汇总，按"最该行动的排最前"排序。',
   },

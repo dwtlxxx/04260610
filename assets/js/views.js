@@ -177,6 +177,24 @@ function searchEmptyHint(state) {
  *   搜索时 app.js 走 refreshResults()，只替换 .main-col 里的"统计条 + 本函数结果"，
  *   放在 renderDesktop/renderMobile 里的话，打字时不会更新（等于没做）。
  */
+/**
+ * 信息流到底的分割线。
+ *
+ * 反馈："首页划到底部后加一个分割线"。列表滚到底时最后一张卡片直接贴到屏幕边缘，
+ * 看不出"这里已经是全部了"还是"还在加载"。加一条收尾分割线 + 条数说明，
+ * 让"到底了"这件事有明确视觉信号。
+ */
+function feedEndMark(state, items) {
+  if (!items.length) return '';
+  const kw = (state.filters && state.filters.keyword || '').trim();
+  const scope = kw ? `「${kw}」的搜索结果` : '当前筛选';
+  return h`<div class="feed-end" aria-hidden="true">
+    <span class="feed-end-rule"></span>
+    <span class="feed-end-text">已经到底了 · ${esc(scope)}共 ${items.length} 条</span>
+    <span class="feed-end-rule"></span>
+  </div>`;
+}
+
 export function feedSection(state, dataset) {
   const boardId = activeBoardId(state);
   const items = itemsOfBoard(dataset, boardId);
@@ -185,14 +203,14 @@ export function feedSection(state, dataset) {
 
   if (isTimeline) {
     return hint + (items.length
-      ? timelineView(state, items)
+      ? timelineView(state, items) + feedEndMark(state, items)
       : emptyState(state, {
         filtered: true,
         hint: searchEmptyHint(state) || '当前时间线只显示官方信息，可切换为「全部来源」。',
       }));
   }
   if (!items.length) return hint + emptyState(state, { filtered: true, hint: searchEmptyHint(state) });
-  return hint + cardGrid(items, state);
+  return hint + cardGrid(items, state) + feedEndMark(state, items);
 }
 
 function statsBar(s) {
@@ -858,9 +876,23 @@ export function renderMobile(state, dataset) {
         ${body}
       </div>
     </div>
-    ${onFeed ? h`<button class="fab" data-action="open-publish" aria-label="发布">${ICON.plus}</button>` : ''}
+    ${onFeed ? h`<button class="fab" data-action="open-publish" aria-label="发布" title="发布信息">${ICON.plus}</button>` : ''}
+    ${onFeed ? toTopButton() : ''}
     ${bottomNav(state)}
     ${aiSheet(state, dataset)}`;
+}
+
+/**
+ * 回到顶部按钮（两端共用，位置固定在右下角的按钮栈里）。
+ *
+ * 默认 `is-visible` 不置位（CSS 里是透明 + 不吃事件），
+ * 由 app.js 的滚动监听按 scrollY 切换 —— 因此这里不带任何滚动状态，
+ * 渲染函数保持"纯 state → HTML"。
+ */
+export function toTopButton() {
+  return h`<button class="to-top" data-action="to-top" aria-label="回到顶部" title="回到顶部">
+    ${ICON.arrowUp}
+  </button>`;
 }
 
 function bottomNav(state) {
@@ -932,6 +964,10 @@ export function renderDesktop(state, dataset) {
       ${feedSection(state, dataset)}`;
   }
 
+  /* 电脑端右下角也需要发布入口：
+     反馈"电脑端右下角锁定位置放一个加号按钮用于发布内容"。
+     手机端本来就有 .fab，这里把它一并渲染到电脑端（CSS 负责两端的定位与大小），
+     并与"回到顶部"组成右下角的按钮栈（见 CSS 的 --dock-* 变量）。 */
   return h`${topbar(state, dataset)}
     <div class="shell">
       ${sidebar}
@@ -939,7 +975,9 @@ export function renderDesktop(state, dataset) {
       <div class="aside-col">
         ${aside}
       </div>
-    </div>`;
+    </div>
+    <button class="fab" data-action="open-publish" aria-label="发布信息" title="发布信息">${ICON.plus}</button>
+    ${toTopButton()}`;
 }
 
 function boardNavPanel(state, dataset) {
@@ -958,32 +996,48 @@ function boardNavPanel(state, dataset) {
     [BOARD.STUDENT]: ICON.boardStudent,
     [BOARD.TIMELINE]: ICON.boardTimeline,
   }[id] || esc(fallback));
-  const rows = list.map((b) => {
-    const count = b.id === BOARD.ALL ? dataset.length : itemsOfBoard(dataset, b.id).length;
-    const on = state.route === 'feed' && state.board === b.id;
-    // title 让轨道态悬停能看到板块名（轨道里文字是隐藏的）
-    return h`<button class="nav-link ${on ? 'is-active' : ''} ${b.official ? 'is-official' : ''}"
-        data-action="board" data-id="${esc(b.id)}" title="${esc(b.label)}"
-        aria-label="${esc(b.label)}">
-      <span class="nav-board-icon" aria-hidden="true">${iconOf(b.id, b.icon)}</span>
-      <span class="nav-label">${esc(b.label)}</span>
-      <span class="count">${count}</span>
-    </button>`;
-  }).join('');
 
-  return h`<div class="panel">
+  const navRow = (b, { count, on }) => h`<button class="nav-link ${on ? 'is-active' : ''} ${b.official ? 'is-official' : ''}"
+      data-action="board" data-id="${esc(b.id)}" title="${esc(b.label)}"
+      aria-label="${esc(b.label)}">
+    <span class="nav-board-icon" aria-hidden="true">${iconOf(b.id, b.icon)}</span>
+    <span class="nav-label">${esc(b.label)}</span>
+    <span class="count">${count}</span>
+  </button>`;
+
+  const allBoard = BOARD_MAP[BOARD.ALL];
+  const rows = list.map((b) => navRow(b, {
+    count: itemsOfBoard(dataset, b.id).length,
+    on: state.route === 'feed' && state.board === b.id,
+  })).join('');
+
+  /* 「全部内容」单独放在最上面一块：
+     它是"聚合视图"（BOARD.ALL 的 types 是 aggregate），本来就不属于任何板块，
+     而桌面端侧栏此前只有板块列表，没有回到"看全部"的入口 —— 只能靠顶栏品牌或重载页面。
+     单独成块后既补上了这个入口，也不会和板块混在一起（避免"全部也算一个板块"的误解）。 */
+  return h`<div class="panel nav-all-panel">
+    <div class="panel-title">内容</div>
+    <div class="nav-list">
+      ${navRow(allBoard, { count: dataset.length, on: state.route === 'feed' && state.board === BOARD.ALL })}
+    </div>
+  </div>
+  <div class="panel">
     <div class="panel-title">板块</div>
     <div class="nav-list">
       ${rows}
-      <button class="nav-link ${state.route === 'feed' && state.board === BOARD.TIMELINE ? 'is-active' : ''}"
-          data-action="board" data-id="${BOARD.TIMELINE}">
-        <span class="nav-board-icon" aria-hidden="true">时</span>
-        <span class="nav-label">时间线</span><span class="count">${dataset.length}</span>
+      ${navRow(BOARD_MAP[BOARD.TIMELINE], {
+        count: dataset.length,
+        on: state.route === 'feed' && state.board === BOARD.TIMELINE,
+      })}
+      <button class="nav-link" data-action="nav" data-route="mine"
+              title="我的日程" aria-label="我的日程">
+        <span class="nav-board-icon" aria-hidden="true">${ICON.star}</span>
+        <span class="nav-label">我的日程</span><span class="count">${state.favorites.length}</span>
       </button>
-      <button class="nav-link" data-action="nav" data-route="mine">
-        ${ICON.star}<span class="nav-label">我的日程</span><span class="count">${state.favorites.length}</span>
+      <button class="nav-link" data-action="open-publish" title="发布信息" aria-label="发布信息">
+        <span class="nav-board-icon" aria-hidden="true">${ICON.plus}</span>
+        <span class="nav-label">发布信息</span>
       </button>
-      <button class="nav-link" data-action="open-publish">${ICON.plus}<span class="nav-label">发布信息</span></button>
     </div>
   </div>`;
 }

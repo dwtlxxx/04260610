@@ -57,6 +57,25 @@ body::before {
   z-index: -1;
 }
 
+/* 背景的第二层：顶部两团很淡的光晕（品牌蓝 + AI 紫）。
+   反馈"背景再放开、更丰富一点"——只有底部一条渐变显得单薄，
+   加一层顶部光晕后页面有"上浅下浓"的层次，且完全是背景色、不压内容。
+   放在 z-index:-2（比底部色带更靠后），两者叠加不会互相吃掉。 */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: -2;
+  background:
+    radial-gradient(58% 42% at 8% -6%,
+      color-mix(in srgb, var(--brand) 22%, transparent), transparent 72%),
+    radial-gradient(46% 34% at 96% 2%,
+      color-mix(in srgb, var(--ai-accent) 18%, transparent), transparent 74%),
+    radial-gradient(40% 30% at 50% 108%,
+      color-mix(in srgb, var(--brand) 14%, transparent), transparent 76%);
+}
+
 button { font-family: inherit; font-size: inherit; cursor: pointer; }
 input, textarea, select { font-family: inherit; font-size: inherit; color: inherit; }
 a { color: var(--brand); text-decoration: none; }
@@ -399,6 +418,25 @@ mark.hit {
 .card-foot .grow { flex: 1; }
 
 /* ============================================================
+ *  信息流收尾分割线
+ *
+ *  反馈："首页划到底后加一个分割线"。列表到底时最后一张卡片直接贴着底部结束，
+ *  分不清"已经全部加载完"还是"还在加载"。一条两侧渐隐的细线 + 条数说明，
+ *  把"到底了"变成看得见的信号。
+ * ============================================================ */
+.feed-end {
+  display: flex; align-items: center; gap: var(--sp-3);
+  margin: var(--sp-5) 0 var(--sp-2);
+  color: var(--text-tertiary);
+  font-size: var(--fs-xs);
+}
+.feed-end-rule {
+  flex: 1; height: 1px;
+  background: linear-gradient(90deg, transparent, var(--border-strong), transparent);
+}
+.feed-end-text { flex: none; white-space: nowrap; }
+
+/* ============================================================
  *  完整度进度条
  * ============================================================ */
 .meter { display: flex; align-items: center; gap: var(--sp-2); }
@@ -512,11 +550,21 @@ mark.hit {
   font-size: 9px; line-height: 15px; text-align: center;
 }
 
-/* 手机端发布浮动按钮 */
+/* ---------- 右下角按钮栈 ----------
+   手机端与电脑端共用的三个悬浮按钮：发布（最下）→ 回到顶部 → AI。
+   用同一组变量算位置，新增按钮时只改一处，不会互相压住。
+   手机端要让开底部导航，电脑端没有导航，直接离底 24px。 */
+.app {
+  --dock-base: calc(var(--bottomnav-h) + env(safe-area-inset-bottom, 0px) + var(--sp-4));
+  --dock-step: 64px;                 /* 一个按钮 + 间距 */
+}
+.app[data-device='desktop'] { --dock-base: var(--sp-6); }
+
+/* 发布浮动按钮（两端都有；电脑端按反馈也常驻右下角） */
 .fab {
   position: fixed; z-index: 41;
   right: var(--sp-4);
-  bottom: calc(var(--bottomnav-h) + env(safe-area-inset-bottom, 0px) + var(--sp-4));
+  bottom: var(--dock-base);
   width: 52px; height: 52px; border-radius: 50%;
   border: none;
   background: var(--brand); color: var(--text-on-brand);
@@ -525,7 +573,24 @@ mark.hit {
   transition: transform var(--t-fast), background var(--t-fast);
 }
 .fab:hover { background: var(--brand-hover); transform: scale(1.05); }
-.app[data-device='desktop'] .fab { display: none; }
+
+/* 回到顶部：默认隐藏（透明 + 不吃事件），滚过一定距离后由 JS 加 .is-visible */
+.to-top {
+  position: fixed; z-index: 41;
+  right: var(--sp-4);
+  bottom: calc(var(--dock-base) + var(--dock-step));
+  width: 44px; height: 44px; border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  box-shadow: var(--shadow-md);
+  display: grid; place-items: center;
+  opacity: 0; pointer-events: none; transform: translateY(8px);
+  transition: opacity 180ms ease, transform 220ms cubic-bezier(.22,1,.36,1),
+              color var(--t-fast), border-color var(--t-fast);
+}
+.to-top.is-visible { opacity: 1; pointer-events: auto; transform: none; }
+.to-top:hover { color: var(--brand); border-color: var(--brand-border); }
 
 /* ============================================================
  *  桌面端：侧栏 + 主区 + 右栏
@@ -1643,7 +1708,7 @@ html[data-theme='dark'] {
 .ai-fab {
   position: fixed; z-index: 42;
   right: var(--sp-4);
-  bottom: calc(var(--bottomnav-h) + env(safe-area-inset-bottom, 0px) + 84px);
+  bottom: calc(var(--dock-base) + var(--dock-step) * 2);   /* 按钮栈第三层（见 .fab 处的说明） */
   width: 52px; height: 52px; border-radius: 50%;
   border: 1px solid var(--ai-border);
   background: var(--bg-surface);
@@ -1936,6 +2001,18 @@ html[data-theme='dark'] {
 /* 轨道态：图标居中，避免贴着左边框显得歪 */
 .app[data-device='desktop'] .sidebar .nav-link { padding-left: var(--sp-3); padding-right: var(--sp-3); }
 .app[data-device='desktop'] .sidebar > .panel { background: none; border: none; box-shadow: none; padding: 0; }
+
+/* 「全部内容」块：与下面的板块分组区分开，读起来是"总览 + 分组"两层，
+   并给它一点品牌色，让它明显是"回到全部"的入口（而不是又一个板块）。 */
+.nav-all-panel {
+  background: linear-gradient(180deg, var(--bg-surface) 0%,
+    color-mix(in srgb, var(--brand) 7%, var(--bg-surface)) 100%);
+  border-color: color-mix(in srgb, var(--brand) 22%, var(--border));
+}
+.nav-all-panel .nav-link.is-active {
+  background: color-mix(in srgb, var(--brand) 14%, transparent);
+  color: var(--brand);
+}
 
 /* 轨道占位：侧栏是 fixed，不占文档流，所以由 shell 预留它的宽度 */
 .app[data-device='desktop'] .shell { padding-left: calc(var(--rail-w) + var(--sp-4)); }
