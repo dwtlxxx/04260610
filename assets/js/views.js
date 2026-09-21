@@ -993,7 +993,8 @@ export function renderDesktop(state, dataset) {
       </div>
     </div>
     <button class="fab" data-action="open-publish" aria-label="发布信息" title="发布信息">${ICON.plus}</button>
-    ${toTopButton()}`;
+    ${toTopButton()}
+    ${waveCanvas()}`;
 }
 
 function boardNavPanel(state, dataset) {

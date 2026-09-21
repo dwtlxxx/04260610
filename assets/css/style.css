@@ -2355,3 +2355,19 @@ html[data-theme='dark'] {
   .wave-canvas { opacity: .55; }
   .card::after { height: 1px; opacity: .3; }
 }
+
+/* ============================================================
+ *  应用外壳（.shell）—— 主区与右栏的横向排布
+ *
+ *  ⚠ 这条规则此前在文件里丢失了（原因见提交信息），后果是 .main-col 与 .aside-col
+ *  退化成普通块级元素、右栏掉到主内容下方。这里恢复并补上说明。
+ * ============================================================ */
+.shell {
+  display: flex;
+  flex: 1;
+  width: 100%;
+  max-width: var(--container-max);
+  margin: 0 auto;
+  gap: var(--sp-5);
+  padding: 0 var(--sp-4);
+}
