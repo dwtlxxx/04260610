@@ -43,6 +43,10 @@ class El {
     this._html = String(v);
     this._cachedAll = null;
     this._cachedSel = {};
+    /* 记录 DOM 被重建了几次：用于抓住"一次操作却重建多次"这类缺陷。
+       真实案例：打开详情时 setState 与调用处各刷新一次弹层，第二次重建
+       把正在播放"从卡片长出来"动画的面板节点直接换掉了，动画等于没生效。 */
+    this._htmlWrites = (this._htmlWrites || 0) + 1;
     /* 忠实模拟真实 DOM：重新赋值 innerHTML 会销毁旧子节点、重建新的。
        桩为了能跨多次开关复用同一个面板对象（便于断言动画），保留 _modal / _mask 的
        对象身份，但必须把"正在关闭"这个类一并清掉 —— 真实 DOM 里它是随旧节点
@@ -629,7 +633,15 @@ panel.children = [new El('div'), new El('div')];       // 面板内容（用于�
 const animCard = mkCard('1');
 animCard._rect = { left: 120, top: 300, width: 320, height: 180 };
 panel.animations.length = 0;
+const writesBefore = modalHost._htmlWrites || 0;
 click(animCard);
+/* ⚠ 这条是本次真实踩到的坑：打开详情时如果弹层 DOM 被重建两次，
+   第一次创建、正在播放"从卡片长出来"动画的面板节点会被第二次重建丢掉，
+   动画等于没生效（无头浏览器实测：面板直接出现在最终位置、动画列表为空）。
+   桩里面板对象会被复用，所以单看动画列表发现不了，必须数重建次数。 */
+check('打开详情只重建一次弹层 DOM',
+  (modalHost._htmlWrites || 0) - writesBefore === 1,
+  `重建 ${(modalHost._htmlWrites || 0) - writesBefore} 次`);
 
 const expandAnims = panel.animations.slice();
 check('打开详情时面板播放了动画', expandAnims.length > 0, `${expandAnims.length} 条`);

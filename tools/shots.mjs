@@ -80,6 +80,13 @@ try {
   const cdp = new CDP(ws);
   await cdp.send('Page.enable');
   await cdp.send('Runtime.enable');
+  /* ⚠ 无头浏览器默认 prefers-reduced-motion: reduce，而本产品所有动画都尊重该偏好
+     （开启时直接不播）。不显式覆盖，截出来的"动画帧"全是静止稳态，
+     等于只在验证"减少动效"分支 —— 我一开始就被这点骗过，以为动画没生效。
+     这里强制 no-preference，看到的才是真实用户的动画。 */
+  await cdp.send('Emulation.setEmulatedMedia', {
+    features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }],
+  });
 
   const shoot = async (file) => {
     const { data } = await cdp.send('Page.captureScreenshot', { format: 'png' });
@@ -98,12 +105,19 @@ try {
 
     const before = await shoot(`anim-${w}-0-before.png`);
     console.log('截图：' + before);
-    // 点第 3 张卡片（避开置顶区，确保是信息流里的普通卡片）
-    await cdp.send('Runtime.evaluate', {
-      expression: `(() => { const c = document.querySelectorAll('.feed-grid .card')[2] || document.querySelector('.card');
-        c.scrollIntoView({block:'center'}); c.click(); return true; })()`,
+    // 点第 1 张卡片（手机端信息流没有 .feed-grid 包裹层，直接用 .card）
+    const clicked = await cdp.send('Runtime.evaluate', {
+      expression: `(() => {
+        const c = document.querySelector('.card');
+        if (!c) return null;
+        c.scrollIntoView({ block: 'center' });   // 让卡片进入视野，动画才能拍全
+        const r = c.getBoundingClientRect();
+        return Math.round(r.left) + ',' + Math.round(r.top) + ' ' + Math.round(r.width) + 'x' + Math.round(r.height);
+      })()`,
       returnByValue: true,
     });
+    console.log('被点卡片矩形：' + clicked.result.value);
+    await cdp.send('Runtime.evaluate', { expression: `document.querySelector('.card').click()` });
     for (const [i, wait] of [[1, 350], [2, 350], [3, 500], [4, 800], [5, 1600]]) {
       await sleep(wait);
       const f = await shoot(`anim-${w}-${i}.png`);

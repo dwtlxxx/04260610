@@ -504,7 +504,12 @@ export function expandFromRect(rect, panelEl, { duration = 320 } = {}) {
   const rest = matrixCSS(currentMatrix(panelEl));   // 面板自己的常态（通常就是单位矩阵）
 
   const frames = [
-    { transform: from, opacity: 0.85, ...radiusFrame(rect.radius, panelRadius) },
+    /* 面板【表面】全程保持不透明：看起来就是"那张卡片的表面长大了"。
+       ⚠ 一开始把整块面板也做了透明度渐入，结果用无头浏览器逐帧截图发现：
+       动画前半段能透过面板看到背后的信息流，像重影，很脏。
+       正确做法（Material 容器变换同款）：表面不透明，只让【内容】淡入 ——
+       内容的淡入既遮挡了非等比缩放造成的形变，又不会让面板变透明。 */
+    { transform: from, opacity: 1, ...radiusFrame(rect.radius, panelRadius) },
     { transform: rest, opacity: 1, ...radiusFrame(panelRadius, panelRadius) },
   ];
 
@@ -540,8 +545,10 @@ export function collapseToRect(rect, panelEl, { duration = 260 } = {}) {
 
   const frames = target
     ? [
+      /* 表面同样保持不透明：缩回卡片后由真实卡片接上（两者位置/尺寸/圆角一致，
+         所以移除面板的那一瞬间不会闪）。内容在缩的过程中先淡出，避免整段内容被压扁时还在读字。 */
       { transform: now, opacity: 1, ...radiusFrame(panelRadius, rect.radius) },
-      { transform: target, opacity: 0.5, ...radiusFrame(rect.radius, rect.radius) },
+      { transform: target, opacity: 1, ...radiusFrame(rect.radius, rect.radius) },
     ]
     // 找不到来源卡片（已被筛选掉 / 滚出屏幕）：缩回一点点 + 淡出
     : [

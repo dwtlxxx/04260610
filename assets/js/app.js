@@ -662,15 +662,20 @@ function handleAction(e, el) {
       // 只更新弹层，不整页重渲染，避免列表滚动位置跳动
       // 先拍下这张卡片的屏幕位置：弹层会从这里"长出来"，关闭时再缩回这里
       state.modalOriginRect = captureRect(el);
+      /* ⚠ 这里不能再补一次 renderModal()。
+         setState(..., { soft: true }) 内部已经会刷新弹层；再调用一次会重建弹层 DOM，
+         而"从卡片长出来"的动画正打在第一次创建的那个面板节点上 ——
+         节点一被替换，动画就随之被丢掉，用户看到的是"啪"地直接出现。
+         （早期为了修"点了没反应"曾在调用处补过 renderModal()，
+           后来 setState 里已经统一处理，这里的补调用就成了纯副作用。） */
       setState({ modal: { type: 'detail', id: el.dataset.id } }, { soft: true });
-      renderModal();
       return;
     }
 
     case 'open-publish': {
       state.modalOriginRect = captureRect(el);   // 从"发布"按钮/FAB 长出来
+      // 同上：setState 非 soft 分支会自己刷新弹层，别重复渲染
       setState({ modal: { type: 'publish' } });
-      renderModal();
       requestAnimationFrame(updateLiveCheck);
       return;
     }
