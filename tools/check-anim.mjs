@@ -17,7 +17,13 @@
  *
  * 用法：
  *   node tools/serve.cjs "<仓库绝对路径>" 8123
- *   node tools/check-anim.mjs [--width 375] [--url http://127.0.0.1:8123/]
+ *   node tools/check-anim.mjs                      # 默认 375 / 768 / 1440 三种形态
+ *   node tools/check-anim.mjs 375 1024 1920        # 指定宽度
+ *   node tools/check-anim.mjs --url https://dwtlxxx.github.io/04260610/
+ *
+ * 三种形态的弹层结构并不同，所以必须逐个宽度验证：
+ *   <768px  手机：底部抽屉（贴底、仅上方圆角）
+ *   ≥1024px 电脑：居中对话框（四角圆角、限宽）
  */
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync } from 'node:fs';
@@ -33,7 +39,8 @@ if (!EDGE) { console.error('未找到 Edge / Chrome'); process.exit(2); }
 const argv = process.argv.slice(2);
 const getArg = (n, d) => { const i = argv.indexOf(n); return i >= 0 ? argv[i + 1] : d; };
 const URL_ = getArg('--url', 'http://127.0.0.1:8123/');
-const WIDTH = Number(getArg('--width', '375'));
+const argWidths = argv.filter((a) => /^\d+$/.test(a)).map(Number);
+const WIDTHS = argWidths.length ? argWidths : [375, 768, 1440];
 const PORT = 9337;
 
 class CDP {
@@ -72,8 +79,9 @@ try {
   const cdp = new CDP(ws);
   await cdp.send('Page.enable');
   await cdp.send('Runtime.enable');
+  // 视口由 verifyWidth() 逐个宽度覆盖，这里先设成第一个宽度占位
   await cdp.send('Emulation.setDeviceMetricsOverride', {
-    width: WIDTH, height: 812, deviceScaleFactor: 1, mobile: true,
+    width: WIDTHS[0], height: WIDTHS[0] < 768 ? 812 : 900, deviceScaleFactor: 1, mobile: WIDTHS[0] < 768,
   });
 
   const ev = async (expr) => {
@@ -106,69 +114,95 @@ try {
     await sleep(1400);
   };
 
-  console.log(`地址：${URL_}　视口：${WIDTH}px\n`);
+  /** 单个宽度下的完整验证（正常动效 + 关闭动画） */
+  const verifyWidth = async (w) => {
+    await cdp.send('Emulation.setDeviceMetricsOverride', {
+      width: w, height: w < 768 ? 812 : 900, deviceScaleFactor: 1, mobile: w < 768,
+    });
+    console.log(`=== ${w}px　${w < 768 ? '手机（底部抽屉）' : w < 1024 ? '平板' : '电脑（居中对话框）'} ===`);
+    await load();
+    ok('页面默认不是"减少动效"（否则下面测的是另一条分支）', (await panelState()) === null);
+    // 强制成"用户没有要求减少动效"，否则本产品会跳过全部动画
+    await cdp.send('Emulation.setEmulatedMedia', {
+      features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }],
+    });
+    // ⚠ 播放速率必须在页面加载之后设置，否则会被导航重置
+    await cdp.send('Animation.setPlaybackRate', { playbackRate: 0.1 })
+      .catch(() => console.log('  （当前浏览器不支持 Animation.setPlaybackRate，按正常速度测量）'));
+
+    const card = await ev(`
+      const c = document.querySelector('.card');
+      if (!c) return null;
+      c.scrollIntoView({ block: 'center' });
+      const r = c.getBoundingClientRect();
+      return { left: Math.round(r.left), top: Math.round(r.top),
+        width: Math.round(r.width), height: Math.round(r.height) };`);
+    ok('页面上存在可点击的卡片', !!card,
+      card ? `卡片 ${card.left},${card.top} ${card.width}x${card.height}` : '');
+    if (!card) return;
+
+    await ev(`document.querySelector('.card').click(); return true;`);
+    const samples = [];
+    for (const wait of [70, 150, 250, 450, 900, 1700, 3000]) {
+      await sleep(wait);
+      const s = await panelState();
+      if (s) samples.push(s);
+    }
+    ok('面板在动画过程中一直存在', samples.length >= 5, `采样 ${samples.length} 次`);
+    if (!samples.length) return;
+
+    const first = samples[0];
+    const last = samples[samples.length - 1];
+    ok('点击后立即有动画在播（不是"直接出现在终点"）', first.anims >= 1, `anims=${first.anims}`);
+    /* 起点应接近卡片、而不是终点。终点尺寸取实测值，不写死数字 ——
+       手机端是底部抽屉（≈92vh）、电脑端是居中对话框（≈86vh），
+       写死某个高度会导致换个宽度就误判。 */
+    ok('动画起点接近卡片尺寸（而非最终尺寸）',
+      Math.abs(first.height - card.height) < Math.abs(last.height - card.height),
+      `起点 ${first.width}x${first.height}，卡片 ${card.width}x${card.height}，终点 ${last.width}x${last.height}`);
+    ok('面板表面全程不透明（不能透过面板看到背后的信息流）',
+      samples.every((s) => s.opacity === 1), samples.map((s) => s.opacity).join(','));
+    ok('内容从透明淡入（盖住缩放形变）',
+      first.kidOpacity < 0.5 && last.kidOpacity > 0.9,
+      `内容透明度 ${first.kidOpacity} → ${last.kidOpacity}`);
+    const heights = samples.map((s) => s.height);
+    const widths = samples.map((s) => s.width);
+    ok('面板尺寸单调长大到最终尺寸',
+      heights.every((h, i) => i === 0 || h >= heights[i - 1] - 1)
+      && widths.every((x, i) => i === 0 || x >= widths[i - 1] - 1)
+      && last.height > first.height,
+      heights.join(' → '));
+    ok('动画结束后回到无变换状态', last.transform === 'none', last.transform);
+    console.log(`     轨迹：${samples.map((s) => `${s.width}x${s.height}@${s.top}`).join(' → ')}`);
+
+    console.log('  --- 关闭 ---');
+    await ev(`document.querySelector('.modal [data-action="close-modal"]').click(); return true;`);
+    await sleep(100);
+    const closing = await panelState();
+    ok('关闭时先播放收起动画（节点尚未被移除）', !!closing,
+      closing ? `仍在播放 anims=${closing.anims}` : '已直接移除');
+    /* ⚠ 收起用的是 ease-in（慢起），刚点下那几十毫秒几乎看不出位移：
+       只在 120ms 处采一次样，慢放后相当于动画才走了 12ms，尺寸当然没变 ——
+       那是测量时机的问题，不是动画没生效。这里隔一段再采一次，看是否在持续缩小。
+       （采样点必须早于 app.js 里的兜底清理超时，否则面板已经被移除。） */
+    await sleep(500);
+    const shrinking = await panelState();
+    ok('收起过程中面板在持续缩小（朝着卡片方向）',
+      !!closing && !!shrinking && shrinking.height < closing.height,
+      closing && shrinking ? `${closing.width}x${closing.height} → ${shrinking.width}x${shrinking.height}` : '已移除');
+    await sleep(2600);
+    ok('收起动画结束后弹层被移除', (await panelState()) === null);
+    console.log('');
+  };
+
+  console.log(`地址：${URL_}\n`);
   console.log('=== 1. 正常动效（prefers-reduced-motion: no-preference）===');
-  await load();
-  ok('页面默认不是"减少动效"（否则下面测的是另一条分支）', (await panelState()) === null);
-  // 强制成"用户没有要求减少动效"
-  await cdp.send('Emulation.setEmulatedMedia', {
-    features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }],
+  for (const w of WIDTHS) await verifyWidth(w);
+
+  console.log('=== 2. 减少动效：不应有动画，但功能必须照常 ===');
+  await cdp.send('Emulation.setDeviceMetricsOverride', {
+    width: WIDTHS[0], height: 812, deviceScaleFactor: 1, mobile: WIDTHS[0] < 768,
   });
-  // ⚠ 播放速率必须在加载之后设置，否则会被导航重置
-  await cdp.send('Animation.setPlaybackRate', { playbackRate: 0.1 })
-    .catch(() => console.log('  （当前浏览器不支持 Animation.setPlaybackRate，按正常速度测量）'));
-
-  const card = await ev(`
-    const c = document.querySelector('.card');
-    if (!c) return null;
-    c.scrollIntoView({ block: 'center' });
-    const r = c.getBoundingClientRect();
-    return { left: Math.round(r.left), top: Math.round(r.top),
-      width: Math.round(r.width), height: Math.round(r.height) };`);
-  ok('页面上存在可点击的卡片', !!card,
-    card ? `卡片 ${card.left},${card.top} ${card.width}x${card.height}` : '');
-
-  await ev(`document.querySelector('.card').click(); return true;`);
-  const samples = [];
-  for (const wait of [70, 150, 250, 450, 900, 1700, 3000]) {
-    await sleep(wait);
-    const s = await panelState();
-    if (s) samples.push(s);
-  }
-  ok('面板在动画过程中一直存在', samples.length >= 5, `采样 ${samples.length} 次`);
-
-  const first = samples[0];
-  ok('点击后立即有动画在播（不是"直接出现在终点"）', first && first.anims >= 1,
-    first ? `anims=${first.anims}` : '');
-  // 起点应接近卡片：宽度差距大（卡片 ~343 vs 面板 ~375）时说明确实是从卡片长出来的
-  ok('动画起点接近卡片尺寸（而非最终尺寸）',
-    first && Math.abs(first.height - card.height) < Math.abs(747 - card.height),
-    first ? `起点 ${first.width}x${first.height}，卡片 ${card.width}x${card.height}` : '');
-  ok('面板表面全程不透明（不能透过面板看到背后的信息流）',
-    samples.every((s) => s.opacity === 1),
-    samples.map((s) => s.opacity).join(','));
-  ok('内容从透明淡入（盖住缩放形变）',
-    first && first.kidOpacity < 0.5 && samples[samples.length - 1].kidOpacity > 0.9,
-    first ? `内容透明度 ${first.kidOpacity} → ${samples[samples.length - 1].kidOpacity}` : '');
-  const heights = samples.map((s) => s.height);
-  const last = samples[samples.length - 1];
-  ok('面板高度单调长大到最终尺寸',
-    heights.every((h, i) => i === 0 || h >= heights[i - 1] - 1) && last.height > first.height,
-    heights.join(' → '));
-  ok('动画结束后回到无变换状态', last.transform === 'none', last.transform);
-  console.log(`     轨迹：${samples.map((s) => `${s.width}x${s.height}@${s.top}`).join(' → ')}`);
-
-  console.log('');
-  console.log('=== 2. 关闭动画 ===');
-  await ev(`document.querySelector('.modal [data-action="close-modal"]').click(); return true;`);
-  await sleep(120);
-  const closing = await panelState();
-  ok('关闭时先播放收起动画（节点尚未被移除）', !!closing, closing ? `仍在播放 anims=${closing.anims}` : '已直接移除');
-  await sleep(1200);
-  ok('收起动画结束后弹层被移除', (await panelState()) === null);
-
-  console.log('');
-  console.log('=== 3. 减少动效：不应有动画，但功能必须照常 ===');
   await cdp.send('Emulation.setEmulatedMedia', {
     features: [{ name: 'prefers-reduced-motion', value: 'reduce' }],
   });

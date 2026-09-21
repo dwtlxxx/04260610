@@ -186,7 +186,7 @@
 │   ├── check-readme.mjs          # 交付文档自检：表格列数、必需链接、结构图与仓库一致
 │   ├── check-live.mjs            # 线上实测：Pages 资源可达、与本地一致、模块依赖图闭合
 │   ├── check-layout.mjs          # 布局实测（无头浏览器）：逐宽度检测横向溢出与越界元素
-│   ├── check-anim.mjs            # 动画实测（无头浏览器）：测量面板是否真的从卡片位置长大
+│   ├── check-anim.mjs            # 动画实测（无头浏览器）：手机/平板/电脑三种形态测"是否真从卡片长大"
 │   ├── check-browser.mjs         # 真浏览器端到端：收藏→我的日程→刷新保留 等关键路径
 │   ├── shots.mjs                 # 真实截图（设备模拟）：按宽度截图 / 慢放截取动画帧
 │   └── dbg-search.mjs            # 搜索排查脚本：定位某个词到底命中了哪个字段
@@ -211,7 +211,7 @@
   ```bash
   node tools/serve.cjs "$PWD" 8123
   node tools/check-layout.mjs                    # 逐宽度查横向溢出
-  node tools/check-anim.mjs                      # 测"面板是否真的从卡片长大"
+  node tools/check-anim.mjs                      # 测展开/收起动画（默认 375/768/1440 三种形态）
   node tools/check-browser.mjs --width 375       # 真浏览器走用户路径
   ```
   这三个工具补上了本地自检的盲区，并且各自抓到了真实缺陷：

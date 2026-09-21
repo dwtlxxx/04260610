@@ -33,6 +33,7 @@ import {
 const MOBILE_MAX = 767;      // <= 767px 视为手机
 const DESKTOP_MIN = 1024;    // >= 1024px 进入桌面布局
 const WIDE_MIN = 1280;       // >= 1280px 三栏才真正放得下
+const CLOSE_MS = 260;        // 详情弹层收起（缩回来源卡片）的动画时长
 
 /* ============================================================
  * 应用状态（单一数据源）
@@ -309,10 +310,12 @@ function closeModalAnimated() {
   const finish = () => { if (!finished) { finished = true; done(); } };
 
   const panel = mask.querySelector('.modal');
-  const anim = collapseToRect(modalReturnRect(), panel, { duration: 260 });
+  const anim = collapseToRect(modalReturnRect(), panel, { duration: CLOSE_MS });
   Promise.resolve(anim).then(finish).catch(finish);
-  // 兜底：动画被浏览器中断 / 被"减少动效"跳过时也要收尾
-  setTimeout(finish, 420);
+  /* 兜底超时取动画时长的 3 倍：既能在动画 Promise 永远不 resolve 时保证清理，
+     又不会因为某台设备掉了几帧就把还没播完的收起动画直接掐掉
+     （原先写死 420ms，对 260ms 的动画余量只有 1.6 倍，偏紧）。 */
+  setTimeout(finish, CLOSE_MS * 3);
 }
 
 /* ============================================================
