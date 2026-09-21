@@ -1,4 +1,4 @@
-﻿/**
+/**
  * check-anim.mjs —— 真实浏览器动画验证（无头 Edge + CDP）
  *
  * 为什么必须存在这样一个脚本：
@@ -21,9 +21,9 @@
  *   node tools/check-anim.mjs 375 1024 1920        # 指定宽度
  *   node tools/check-anim.mjs --url https://dwtlxxx.github.io/04260610/
  *
- * 三种形态的弹层结构并不同，所以必须逐个宽度验证：
- *   <768px  手机：底部抽屉（贴底、仅上方圆角）
- *   ≥1024px 电脑：居中对话框（四角圆角、限宽）
+ * 三种形态的弹层都【居中】，但可用宽度与限宽不同，所以仍需逐个宽度验证：
+ *   <768px  手机：居中浮层（四周留白、宽度 = 屏宽 - 边距）
+ *   ≥1024px 电脑：居中对话框（限宽 760 / 980px）
  */
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync } from 'node:fs';
@@ -98,7 +98,7 @@ try {
     return result.value;
   };
 
-  /** 读取面板状态：矩形、变换、内容透明度、正在播放的动画数 */
+  /** 读取面板状态：矩形、变换、内容透明度、正在播放的动画数、视口尺寸 */
   const panelState = () => ev(`
     const m = document.querySelector('.modal');
     if (!m) return null;
@@ -113,6 +113,8 @@ try {
       anims: m.getAnimations().length,
       kidOpacity: kids.length ? Math.max(...kids) : 1,
       reduced: window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+      vw: window.innerWidth,
+      vh: window.innerHeight,
     };`);
 
   const load = async () => {
@@ -125,7 +127,7 @@ try {
     await cdp.send('Emulation.setDeviceMetricsOverride', {
       width: w, height: w < 768 ? 812 : 900, deviceScaleFactor: 1, mobile: w < 768,
     });
-    console.log(`=== ${w}px　${w < 768 ? '手机（底部抽屉）' : w < 1024 ? '平板' : '电脑（居中对话框）'} ===`);
+    console.log(`=== ${w}px　${w < 768 ? '手机（居中浮层）' : w < 1024 ? '平板' : '电脑（居中对话框）'} ===`);
     await load();
     ok('页面默认不是"减少动效"（否则下面测的是另一条分支）', (await panelState()) === null);
     // 强制成"用户没有要求减少动效"，否则本产品会跳过全部动画
@@ -161,11 +163,23 @@ try {
     const last = samples[samples.length - 1];
     ok('点击后立即有动画在播（不是"直接出现在终点"）', first.anims >= 1, `anims=${first.anims}`);
     /* 起点应接近卡片、而不是终点。终点尺寸取实测值，不写死数字 ——
-       手机端是底部抽屉（≈92vh）、电脑端是居中对话框（≈86vh），
        写死某个高度会导致换个宽度就误判。 */
     ok('动画起点接近卡片尺寸（而非最终尺寸）',
       Math.abs(first.height - card.height) < Math.abs(last.height - card.height),
       `起点 ${first.width}x${first.height}，卡片 ${card.width}x${card.height}，终点 ${last.width}x${last.height}`);
+
+    /* 二级卡片（详情面板）最终必须【居中】—— 手机端原先是从底部升起的抽屉，
+       现已改为与电脑端一致的居中浮层。这里直接量面板中心与视口中心的偏差。 */
+    const cx = last.left + last.width / 2;
+    const cy = last.top + last.height / 2;
+    ok('二级卡片水平居中', Math.abs(cx - last.vw / 2) <= 1,
+      `面板中心 x=${Math.round(cx)}，视口中心 x=${Math.round(last.vw / 2)}`);
+    ok('二级卡片垂直居中', Math.abs(cy - last.vh / 2) <= 1,
+      `面板中心 y=${Math.round(cy)}，视口中心 y=${Math.round(last.vh / 2)}`);
+    ok('面板四周留有边距（不贴屏幕边）',
+      last.left >= 8 && last.top >= 8
+      && last.left + last.width <= last.vw - 8 && last.top + last.height <= last.vh - 8,
+      `上下左右留白 ${last.top} / ${last.vh - last.top - last.height} / ${last.left} / ${last.vw - last.left - last.width}`);
     ok('面板表面全程不透明（不能透过面板看到背后的信息流）',
       samples.every((s) => s.opacity === 1), samples.map((s) => s.opacity).join(','));
     ok('内容从透明淡入（盖住缩放形变）',

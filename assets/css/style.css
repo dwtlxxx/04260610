@@ -596,15 +596,21 @@ a:hover { text-decoration: underline; }
 
 /* ============================================================
  *  弹层（详情 / 发布 / 筛选）
+ *
+ *  布局：二级卡片（详情面板）在【所有形态下都居中】—— 手机端原先是从底部升起的
+ *        抽屉，已按反馈改为居中浮层，与电脑端一致。
+ *        居中还顺带让"从卡片长出来"的容器变换更好看：面板宽度不再等于屏宽，
+ *        缩放比更接近 1，鼠标/手指点击的卡片与面板之间的空间关系更连续。
  * ============================================================ */
 .modal-host { position: relative; z-index: 100; }
 .modal-mask {
   position: fixed; inset: 0;
   background: var(--overlay);
-  display: flex; align-items: flex-end; justify-content: center;
+  display: flex; align-items: center; justify-content: center;
+  padding: var(--sp-4);            /* 四周留白，面板不贴屏幕边 */
   animation: fade var(--t-base);
 }
-.app[data-device='desktop'] .modal-mask { align-items: center; padding: var(--sp-6); }
+.app[data-device='desktop'] .modal-mask { padding: var(--sp-6); }
 
 @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
 
@@ -616,17 +622,14 @@ a:hover { text-decoration: underline; }
 .modal {
   background: var(--bg-elevated);
   width: 100%;
-  max-height: 92vh;
+  max-width: 100%;
+  max-height: 100%;                /* 由遮罩的内边距决定实际上限，保证上下都留出空隙 */
   overflow-y: auto;
   border: 1px solid var(--border);
-  border-radius: var(--r-xl) var(--r-xl) 0 0;
+  border-radius: var(--r-xl);      /* 居中浮层：四角一致，不再"上圆下方" */
   box-shadow: var(--shadow-lg);
 }
-.app[data-device='desktop'] .modal {
-  max-width: 760px;
-  border-radius: var(--r-xl);
-  max-height: 86vh;
-}
+.app[data-device='desktop'] .modal { max-width: 760px; }
 .modal-wide { max-width: 980px; }
 
 .modal-head {
@@ -1576,7 +1579,7 @@ html[data-theme='dark'] {
   background: var(--bg-elevated);
   border-radius: var(--r-xl) var(--r-xl) 0 0;
   box-shadow: var(--shadow-lg);
-  animation: slideUp var(--t-base);
+  /* 展开动画统一由下方（动画区）的 .ai-sheet 规则给出，这里不再重复声明 */
 }
 .ai-sheet-head {
   display: flex; align-items: center; gap: var(--sp-2);
@@ -1684,6 +1687,14 @@ html[data-theme='dark'] {
 @keyframes expandIn {
   from { opacity: 0; transform: translateY(-6px) scaleY(.96); }
   to { opacity: 1; transform: none; }
+}
+/* 手机端 AI 抽屉：从底部升起。
+   ⚠ 这条 @keyframes 曾经在被删掉的同时仍被 .ai-sheet 引用（清理 .modal 动画时误删），
+   导致抽屉打开变成"啪"地出现且不报任何错 —— CSS 对"引用了不存在的 keyframes"完全静默。
+   现在 verify-render.mjs 会检查"引用的 animation 名必须有对应 @keyframes"，防止再犯。 */
+@keyframes sheetIn {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
 }
 .ai-sheet { animation: sheetIn 260ms cubic-bezier(.22,1,.36,1); }
 .ai-fab { transition: transform 180ms cubic-bezier(.34,1.56,.64,1), background var(--t-fast); }

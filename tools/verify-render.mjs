@@ -44,6 +44,37 @@ if (undefinedVars.length) {
 }
 
 /* ============================================================
+ * 1.5 CSS 动画名：animation 引用的 @keyframes 必须存在
+ *
+ * 为什么要单独查这条：CSS 对"引用了不存在的 keyframes"是**完全静默**的 ——
+ * 不报错、不警告，元素只是不再有动画。清理 .modal 动画时就误删过 sheetIn/slideUp，
+ * 导致手机端 AI 抽屉打开变成"啪"地出现，直到用无头浏览器逐帧测量才发现。
+ * 同时倒查"定义了但没人用"的 keyframes，避免死代码堆积。
+ * ============================================================ */
+const definedKeyframes = new Set([...css.matchAll(/@keyframes\s+([A-Za-z][\w-]*)/g)].map((m) => m[1]));
+const usedAnimations = new Set(
+  [...css.matchAll(/animation\s*:\s*([^;{}]+)/g)]
+    .flatMap((m) => m[1].split(','))
+    .map((part) => part.trim().split(/\s+/)[0])
+    // 过滤掉 none / 变量 / 时间值等非动画名
+    .filter((n) => n && /^[A-Za-z][\w-]*$/.test(n) && !['none', 'inherit', 'initial', 'unset'].includes(n)),
+);
+const missingKeyframes = [...usedAnimations].filter((n) => !definedKeyframes.has(n));
+const unusedKeyframes = [...definedKeyframes].filter((n) => !usedAnimations.has(n));
+console.log('');
+console.log('=== 1.5 CSS 动画名检查 ===');
+console.log(`  定义 ${definedKeyframes.size} 个，引用 ${usedAnimations.size} 个`);
+if (missingKeyframes.length) {
+  missingKeyframes.forEach((n) => note('error', `animation 引用了不存在的 @keyframes: ${n}`));
+  console.log(`  ✗ 引用了但未定义: ${missingKeyframes.join(', ')}（该动画会静默失效）`);
+} else {
+  console.log('  ✓ 所有 animation 都有对应的 @keyframes');
+}
+if (unusedKeyframes.length) {
+  console.log(`  ! 定义了但没被引用（可清理）: ${unusedKeyframes.join(', ')}`);
+}
+
+/* ============================================================
  * 2. JS 中用到的 class 是否在 CSS 中有定义
  * ============================================================ */
 // 仅检查形如 class="a b c" 的静态字符串中出现的自定义类（排除框架/工具类与动态拼接）
