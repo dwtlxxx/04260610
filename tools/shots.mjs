@@ -1,4 +1,4 @@
-/**
+﻿/**
  * shots.mjs —— 真实截图（无头 Edge + CDP 设备模拟）
  *
  * 为什么不用 `msedge --window-size=320 --screenshot`：
@@ -80,6 +80,12 @@ try {
   const cdp = new CDP(ws);
   await cdp.send('Page.enable');
   await cdp.send('Runtime.enable');
+  /* ⚠ 必须禁用缓存：GitHub Pages 会带 Cache-Control 缓存静态文件，
+     而调试用的浏览器 profile 是复用的 —— 不清缓存就可能拿旧版 app.js/ui.js 跑测试，
+     得出与线上当前版本无关的结论（实测踩到：线上收起动画"看起来"没生效，
+     其实是浏览器在用十分钟前的旧构建）。 */
+  await cdp.send('Network.enable');
+  await cdp.send('Network.setCacheDisabled', { cacheDisabled: true });
   /* ⚠ 无头浏览器默认 prefers-reduced-motion: reduce，而本产品所有动画都尊重该偏好
      （开启时直接不播）。不显式覆盖，截出来的"动画帧"全是静止稳态，
      等于只在验证"减少动效"分支 —— 我一开始就被这点骗过，以为动画没生效。

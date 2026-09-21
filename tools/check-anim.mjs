@@ -1,4 +1,4 @@
-/**
+﻿/**
  * check-anim.mjs —— 真实浏览器动画验证（无头 Edge + CDP）
  *
  * 为什么必须存在这样一个脚本：
@@ -79,6 +79,12 @@ try {
   const cdp = new CDP(ws);
   await cdp.send('Page.enable');
   await cdp.send('Runtime.enable');
+  /* ⚠ 必须禁用缓存：GitHub Pages 会带 Cache-Control 缓存静态文件，
+     而调试用的浏览器 profile 是复用的 —— 不清缓存就可能拿旧版 app.js/ui.js 跑测试，
+     得出与线上当前版本无关的结论（实测踩到：线上收起动画"看起来"没生效，
+     其实是浏览器在用十分钟前的旧构建）。 */
+  await cdp.send('Network.enable');
+  await cdp.send('Network.setCacheDisabled', { cacheDisabled: true });
   // 视口由 verifyWidth() 逐个宽度覆盖，这里先设成第一个宽度占位
   await cdp.send('Emulation.setDeviceMetricsOverride', {
     width: WIDTHS[0], height: WIDTHS[0] < 768 ? 812 : 900, deviceScaleFactor: 1, mobile: WIDTHS[0] < 768,

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * check-layout.mjs —— 真实布局检测（无头 Edge + Chrome DevTools Protocol）
  *
  * 为什么需要它：本地那些自检脚本只能验证"结构对不对"（标签配平、类名、id、
@@ -199,6 +199,12 @@ try {
 
   await cdp.send('Page.enable');
   await cdp.send('Runtime.enable');
+  /* ⚠ 必须禁用缓存：GitHub Pages 会带 Cache-Control 缓存静态文件，
+     而调试用的浏览器 profile 是复用的 —— 不清缓存就可能拿旧版 app.js/ui.js 跑测试，
+     得出与线上当前版本无关的结论（实测踩到：线上收起动画"看起来"没生效，
+     其实是浏览器在用十分钟前的旧构建）。 */
+  await cdp.send('Network.enable');
+  await cdp.send('Network.setCacheDisabled', { cacheDisabled: true });
 
   console.log(`检测地址：${URL_}`);
   console.log(`检测宽度：${WIDTHS.join(', ')}px\n`);
