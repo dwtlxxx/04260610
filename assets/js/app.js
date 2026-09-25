@@ -1,4 +1,4 @@
-﻿/**
+/**
  * app.js —— 应用入口与控制器
  *
  * 职责：
@@ -20,7 +20,7 @@ import {
 import * as store from './store.js';
 import { initTheme, cycleTheme, getCurrentMode, resolveTheme, THEME_MODE_LABEL } from './theme.js';
 import { initMusic, toggleMusic, musicOn, getLevel, getSpectrum, getBands } from './music.js';
-import { startDecor } from './decor.js';
+import { startBeat, startScrollEffect } from './decor.js';
 import {
   esc, h, ICON, toast, statusBadge, sourceTag, kindTag, credibilityBadge,
   fieldGrid, riskList, seriesNote, roleNote, completenessMeter, missingLine,
@@ -162,6 +162,8 @@ function computeDataset() {
  * ============================================================ */
 
 const appEl = document.getElementById('app');
+/** 首次渲染是否已完成：用于给 .app 打 data-ready（只打一次，见 render()） */
+let firstPaint = false;
 
 function render() {
   state.now = new Date();
@@ -185,6 +187,12 @@ function render() {
   document.documentElement.setAttribute('data-device', state.device);
   appEl.innerHTML = html;
   appEl.setAttribute('aria-busy', 'false');
+  /* 首次渲染完成：给 .app 打标记，CSS 让真内容淡入接上骨架屏。
+     这里不延迟、不等动画 —— 骨架屏在同一帧就被整体替换掉了，
+     所以"加载快就立刻出现、加载慢则骨架铺满后由内容接上"，节奏跟真实速度走。
+     用模块内布尔量而不是读 DOM 属性判断"是不是第一次"：自检的极简 DOM 桩里
+     元素没有 hasAttribute，读属性会把整个 app 拖崩（实测踩到）。 */
+  if (!firstPaint) { firstPaint = true; appEl.setAttribute('data-ready', '1'); }
   window.scrollTo(0, scrollY);
 
   // 信息流入场动画：错落上浮（落差感来自每项延迟不同 + 卡片本身高度不一）
@@ -1111,10 +1119,9 @@ function init() {
     syncToTop();
     /* 律动装饰：一个 rAF 循环同时画底部波形与写 :root 的 --beat，
        卡片的律动交给 CSS 消费（26 张卡也只有一次样式计算）。 */
-    startDecor({
-      canvas: appEl.querySelector('.wave-canvas'),
-      getLevel, getSpectrum, getBands, isOn: musicOn,
-    });
+    startBeat({ getLevel, isOn: musicOn });
+    // 滚动时卡片随位置缩放/淡入淡出（只动 transform 与 opacity，不触发重排）
+    startScrollEffect(() => appEl.querySelectorAll('.feed-grid > .card'));
   } catch (err) {
     showFatal(err);
     throw err;

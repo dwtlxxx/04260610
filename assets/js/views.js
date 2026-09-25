@@ -884,7 +884,7 @@ export function renderMobile(state, dataset) {
     </div>
     ${onFeed ? h`<button class="fab" data-action="open-publish" aria-label="发布" title="发布信息">${ICON.plus}</button>` : ''}
     ${onFeed ? toTopButton() : ''}
-    ${waveCanvas()}
+    ${beatGlow()}
     ${bottomNav(state)}
     ${aiSheet(state, dataset)}`;
 }
@@ -901,8 +901,10 @@ export function renderMobile(state, dataset) {
  * 视觉参照用户给的参考图：极细的流动曲线 + 左端圆环节点 + 散布光点。
  * 尺寸由 CSS 定（固定在底部、全宽、约 132px 高），这里只管标记。
  */
-export function waveCanvas() {
-  return h`<canvas class="wave-canvas" aria-hidden="true"></canvas>`;
+export function beatGlow() {
+  // 底部律动装饰：不用线条（用户反馈"细线还是太丑"），改成一层随节奏呼吸的柔和光晕。
+  // 只是一个空 div，形状/亮度全部由 CSS 消费 --beat 得到 —— 没有绘制循环、没有 canvas。
+  return h`<div class="beat-glow" aria-hidden="true"></div>`;
 }
 
 export function toTopButton() {
@@ -994,7 +996,7 @@ export function renderDesktop(state, dataset) {
     </div>
     <button class="fab" data-action="open-publish" aria-label="发布信息" title="发布信息">${ICON.plus}</button>
     ${toTopButton()}
-    ${waveCanvas()}`;
+    ${beatGlow()}`;
 }
 
 function boardNavPanel(state, dataset) {

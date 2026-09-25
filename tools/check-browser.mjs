@@ -214,7 +214,9 @@ try {
     const cs = getComputedStyle(s);
     const r = s.getBoundingClientRect();
     const label = s.querySelector('.nav-label');
-    const filterPanel = s.querySelectorAll(':scope > .panel')[1];
+    /* 侧栏里有 3 个 .panel（内容 / 板块 / 筛选），筛选面板是【最后一个】。
+       以前写成 [1]，量到的其实是"板块"面板 —— 它永远不隐藏，断言于是假失败。 */
+    const filterPanel = s.querySelector(':scope > .panel:last-child');
     return {
       width: Math.round(r.width), right: Math.round(r.right), left: Math.round(r.left),
       opacity: Number(cs.opacity),

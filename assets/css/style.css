@@ -1,4 +1,4 @@
-﻿/* ============================================================
+/* ============================================================
  *  style.css —— 组件样式
  *
  *  铁律：本文件禁止出现硬编码色值，一律引用 tokens.css 的变量。
@@ -135,6 +135,7 @@ a:hover { text-decoration: underline; }
 
 .boot-skel-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-4); }
 .boot-skel-card {
+  --i: 0;                       /* 错峰序号：标记里逐张覆盖，没写就是 0 */
   display: flex; flex-direction: column; gap: var(--sp-3);
   padding: var(--sp-4);
   min-height: 168px;
@@ -159,6 +160,15 @@ a:hover { text-decoration: underline; }
 }
 .boot-sub { font-size: var(--fs-xs); color: var(--text-tertiary); }
 
+/* 骨架自上而下逐个出现：用错峰延时做出"逐张铺开"的节奏。
+   加载真的很快时，app.js 会立刻把整块换成真实内容 —— 不等动画跑完，
+   所以这里的节奏只是"看起来从容"，不会拖慢任何东西。 */
+.boot-skel-card { animation: boot-card-in 420ms cubic-bezier(.22,1,.36,1) backwards; animation-delay: calc(var(--i, 0) * 130ms); }
+@keyframes boot-card-in {
+  from { opacity: 0; transform: translateY(14px) scale(.985); }
+  to { opacity: 1; transform: none; }
+}
+
 /* 手机端：骨架改成单列，和真实信息流一致 */
 @media (max-width: 767px) {
   .boot-skel-cards { grid-template-columns: 1fr; }
@@ -167,6 +177,23 @@ a:hover { text-decoration: underline; }
 /* 减少动效：骨架不做微光扫动，只留静态占位 */
 @media (prefers-reduced-motion: reduce) {
   .boot-skel .skeleton { animation: none; }
+}
+
+/* 首次渲染完成（JS 给 .app 打上 data-ready）：真实内容就地"浮现"。
+   为什么只有透明度、没有位移：位移会生成包含块，让 .fab / 回到顶部这些
+   position:fixed 的元素在动画期间短暂错位；只淡入就完全没有这个副作用。
+   为什么不用等骨架动画跑完：render() 是整体替换 #app.innerHTML，
+   骨架屏在同一帧就被真内容换掉了 —— 加载快时立刻切（不拖时间），
+   加载慢时骨架早已铺满整屏、再由内容淡入接上，节奏跟着真实速度走。 */
+.app[data-ready] > .topbar,
+.app[data-ready] > .shell { animation: content-in 200ms ease-out; }
+@keyframes content-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .app[data-ready] > .topbar,
+  .app[data-ready] > .shell { animation: none; }
 }
 
 /* ============================================================
@@ -2079,8 +2106,31 @@ html[data-theme='dark'] {
   color: var(--brand);
 }
 
+/* —— 消除"展开前后瞬移" ——
+   根因：轨道态与展开态如果各自不同的内边距/对齐，图标在两种状态下的 x 位置就不一样，
+   展开的一瞬间看着像"跳"了一下。这里让两者共用同一套左内边距，
+   并把图标列钉死（flex:none），把宽度变化全部交给文字与留白吸收 ——
+   于是除"面板向右变长、文字淡入"之外，任何元素都不位移。 */
+.sidebar .nav-board-icon { flex: none; }
+.sidebar .nav-label { flex: 1 1 auto; min-width: 0; }
+.sidebar .nav-link { justify-content: flex-start; }
+.app[data-device='desktop'] .sidebar,
+.app[data-device='desktop'] .sidebar:hover,
+.app[data-device='desktop'] .sidebar:focus-within { padding-left: var(--sp-2); }
+.app[data-device='desktop'] .sidebar .nav-link { padding-left: var(--sp-3); padding-right: var(--sp-3); }
+
 /* 轨道占位：侧栏是 fixed，不占文档流，所以由 shell 预留它的宽度 */
 .app[data-device='desktop'] .shell { padding-left: calc(var(--rail-w) + var(--sp-4)); }
+
+/* 关键：让"高度"彻底不依赖"宽度"。
+   实测（tools/check-round6.mjs）：轨道态第一个图标 y=124.5，展开态 y=103.5，差 21px ——
+   就是一行字高。原因是轨道态内容宽只有 40px：面板标题（"内容"）被挤成两行，
+   .nav-label 也被挤成多行，于是每个条目的高度都比展开态高。
+   文字本来在轨道态就是 opacity:0 / 被 overflow-x 裁掉的，所以让它们保持单行、
+   由现有裁剪去处理溢出即可 —— 高度锁死后，展开前后每个元素的坐标完全一致，
+   连"下面的条目往上跳"这种更隐蔽的瞬移也一起消失。 */
+.sidebar .panel-title,
+.sidebar .nav-label { white-space: nowrap; overflow: hidden; }
 
 /* —— 轨道里的图标容器 ——
    反馈："轨道太素，没有选中/悬停的容器感"。所以给每个图标一个圆角容器：
@@ -2319,7 +2369,32 @@ html[data-theme='dark'] {
   --wave-dot: color-mix(in srgb, var(--brand) 55%, transparent);
 }
 
-/* 底部律动波形：固定在底部、全宽、不吃鼠标事件 */
+/* 底部律动装饰：一层柔和色块光晕，随节奏呼吸（替代原先的细线 canvas）。
+   只改 opacity 与 scale，都是合成属性，不逐帧绘制。 */
+.beat-glow {
+  position: fixed; left: 50%; bottom: -14%;
+  width: 118vw; height: 44vh;
+  transform: translateX(-50%) scale(calc(1 + var(--beat) * .05));
+  background: radial-gradient(closest-side,
+    color-mix(in srgb, var(--brand) calc(14% + var(--beat) * 26%), transparent),
+    transparent 74%);
+  filter: blur(26px);
+  opacity: calc(.55 + var(--beat) * .45);
+  pointer-events: none; z-index: 0;
+  transition: opacity 140ms linear, transform 220ms cubic-bezier(.22,1,.36,1);
+}
+/* 卡片：把滚动特效的缩放/淡入淡出与 hover 位移合成为一个 transform，互不覆盖 */
+.card {
+  --sc: 1;                      /* 滚动缩放/透明度：默认中性，decor.js 按视口位置覆盖 */
+  --op: 1;
+  transform: translateY(var(--lift, 0)) scale(var(--sc, 1));
+  opacity: var(--op, 1);
+  transition: box-shadow var(--t-fast), transform 160ms ease-out, opacity 160ms ease-out,
+              border-color var(--t-fast);
+}
+.card:hover { --lift: -1px; box-shadow: var(--shadow-md); }
+
+/* 旧的波形画布规则保留为无效兼容（.wave-canvas 已不再渲染） */
 .wave-canvas {
   position: fixed; left: 0; right: 0; bottom: 0;
   width: 100%; height: 132px;
