@@ -271,6 +271,23 @@ try {
       await cdp.send('Input.dispatchMouseEvent', { type, x: s.x, y: s.y, button: 'left', clickCount: 1 });
     }
   };
+  /* 采样 --beat 直到出现非零电平（= 音频真的开始出声）或超时。
+     两个必须处理的现实（都是实测踩出来的）：
+     ① 不能固定采样 2 秒 —— 音乐是 11.8MB 的 WAV，本地瞬间就绪，而线上 CDN
+        首次缓冲要好几秒，固定窗口会把"还没缓冲完"误判成"播放链路静音"；
+     ② 出声之后还要再观察一段时间（settleMs）才取峰值 —— 第一帧非零电平只有
+        0.007 级别，拿它当峰值会让"光晕跟着亮起"的断言卡在千分位上假失败。 */
+  const waitBeat = async (maxMs, stepMs, settleMs = 2200) => {
+    let peak = 0; let glow = 0; let waited = 0; let startAt = -1;
+    while (waited < maxMs) {
+      const s = await musicState();
+      if (s.beat > peak) { peak = s.beat; glow = s.glowOpacity; }
+      if (startAt < 0 && peak > 0.005) startAt = waited;
+      if (startAt >= 0 && waited - startAt >= settleMs) break;
+      await sleep(stepMs); waited += stepMs;
+    }
+    return { peak, glow, waited, started: startAt >= 0 };
+  };
 
   const start = await musicState();
   ok('音乐按钮带可访问名与按下状态（title / aria-label / aria-pressed 都不为空）',
@@ -279,23 +296,24 @@ try {
   ok('初始状态与持久化偏好一致（默认开启，关过则记住关闭）',
     start.on === (start.pressed === 'true'), `is-on=${start.on}`);
 
-  // 先确保处于"开启"，再验证播放；真实点击（用户手势）才会被播放策略放行
-  if (!start.on) { await clickMusic(start); await sleep(900); }
+  /* 先做一次真实的"关 → 开"点击：既保证处于开启态，又顺带把按钮自身的
+     resume 路径也测了（元素已在播放、但 AudioContext 仍 suspended 的情况，就靠它救回来）。
+     只判断"是否需要点亮"是不够的：偏好本来就是开启时就没有任何手势，
+     音频会被自动播放策略挡在门外，这一组会误报成"播放链路静音"。 */
+  if (start.on) { await clickMusic(start); await sleep(600); }
+  await clickMusic(await musicState());
+  await sleep(600);
   const on = await musicState();
   ok('开启态：按钮高亮与 aria-pressed 同步', on.on === true && on.pressed === 'true',
     `is-on=${on.on} aria-pressed=${on.pressed} 名称="${on.label}"`);
-  let peak = 0; let peakGlow = 0;
-  for (let i = 0; i < 12; i++) {
-    const s = await musicState();
-    if (s.beat > peak) { peak = s.beat; peakGlow = s.glowOpacity; }
-    await sleep(160);
-  }
+  const onPlay = await waitBeat(12000, 200);
+  const peak = onPlay.peak;
   if (peak > 0.005) {
-    ok('开启态：音频真的在跑（--beat 出现非零电平 = 频谱有数据）', true, `峰值 ${peak.toFixed(3)}`);
+    ok('开启态：音频真的在跑（--beat 出现非零电平 = 频谱有数据）', true, `峰值 ${peak.toFixed(3)}（等待 ${onPlay.waited}ms）`);
     ok('开启态：底部光晕亮度跟着电平抬起来（--beat 真的驱动了 CSS）',
-      peakGlow > 0.552, `opacity=${peakGlow}（静态底色 0.55）`);
+      onPlay.glow > 0.552, `opacity=${onPlay.glow}（静态底色 0.55）`);
   } else {
-    console.log(`  ⚠ 参考项跳过：本次 --beat 峰值 ${peak.toFixed(3)}（无头环境缺少音频输出设备时属正常，请在有声卡的浏览器里看光晕是否随音乐呼吸）`);
+    console.log(`  ⚠ 参考项跳过：等待 ${onPlay.waited}ms 内 --beat 峰值仍为 ${peak.toFixed(3)}（无头环境缺音频输出设备时属正常；若在有声卡的浏览器里也不亮，需要查播放链路）`);
   }
   await shot('05-music-on.png');
 
@@ -333,14 +351,10 @@ try {
   // 真实用户激活：Tab 键（不改动任何业务状态，也不碰音乐按钮）
   await cdp.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9, nativeVirtualKeyCode: 9 });
   await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9, nativeVirtualKeyCode: 9 });
-  let after = 0; let afterGlow = 0;
-  for (let i = 0; i < 18; i++) {
-    const s = await musicState();
-    if (s.beat > after) { after = s.beat; afterGlow = s.glowOpacity; }
-    await sleep(160);
-  }
+  const afterPlay = await waitBeat(25000, 250);
+  const after = afterPlay.peak; const afterGlow = afterPlay.glow;
   ok('进页面后第一次普通交互就自动开始播放（无需点音乐按钮）', fresh.on === true && after > 0.005,
-    `交互后 --beat 峰值 ${after.toFixed(3)}（若为 0 且环境有音频设备，说明播放链路仍是静音的）`);
+    `交互后 --beat 峰值 ${after.toFixed(3)}（等待 ${afterPlay.waited}ms；若一直为 0 且环境有音频设备，说明播放链路仍是静音的）`);
   ok('播放起来后底部光晕随之亮起', after > 0.005 && afterGlow > 0.552, `opacity=${afterGlow}（静态底色 0.55）`);
   const stillOn = await musicState();
   ok('自动播放不改写按钮状态（仍是开启）', stillOn.on === true && stillOn.pressed === 'true');
