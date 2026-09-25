@@ -308,6 +308,44 @@ try {
   ok('关闭后 --beat 收敛回 0（光晕退回静态底色，不会僵在亮的位置）', off.beat <= 0.02, `--beat=${off.beat}`);
   ok('关闭后光晕回到基准亮度', Math.abs(off.glowOpacity - 0.55) < 0.02, `opacity=${off.glowOpacity}`);
 
+  /* ⑥ 用户报的问题："进入后不会主动播放音乐"。
+     根因：音频被接进 Web Audio 图之后，决定有没有声音的是 AudioContext 状态，
+     而进页面时创建的 AudioContext 处于 suspended，resume() 以前只写在 toggleMusic() 里
+     —— 于是元素在"播放"却全程静音，点哪都不响，只有手动开关一次音乐才响。
+     这一组按用户真实路径复现：刷新页面 → 不做任何手势 → 随便做一次交互（Tab 键，
+     不碰音乐按钮）→ 音乐必须已经开始出声（--beat 非零）。 */
+  console.log('\n【⑥ 进入页面后自动播放：首次普通交互即出声（不碰音乐按钮）】');
+  let s0 = await musicState();
+  if (!s0.on) { await clickMusic(s0); await sleep(700); }   // 让偏好处于"开"，模拟默认用户
+  await cdp.send('Page.reload', { ignoreCache: true });
+  for (let i = 0; i < 80; i++) {
+    const st = await ev('return { ready: document.readyState, app: !!document.querySelector(".app[data-ready]") };');
+    if (st.ready === 'complete' && st.app) break;
+    await sleep(150);
+  }
+  await sleep(600);
+  const fresh = await musicState();
+  ok('刷新后按钮仍记得"开启"（偏好持久化，未被自动播放策略改写）', fresh.on === true, `is-on=${fresh.on}`);
+  let before = 0;
+  for (let i = 0; i < 6; i++) { const v = (await musicState()).beat; if (v > before) before = v; await sleep(160); }
+  console.log(`  · 参考值：尚未交互时 --beat 峰值 = ${before.toFixed(3)}（浏览器通常禁止带声自动播放，0 属正常）`);
+
+  // 真实用户激活：Tab 键（不改动任何业务状态，也不碰音乐按钮）
+  await cdp.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9, nativeVirtualKeyCode: 9 });
+  await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9, nativeVirtualKeyCode: 9 });
+  let after = 0; let afterGlow = 0;
+  for (let i = 0; i < 18; i++) {
+    const s = await musicState();
+    if (s.beat > after) { after = s.beat; afterGlow = s.glowOpacity; }
+    await sleep(160);
+  }
+  ok('进页面后第一次普通交互就自动开始播放（无需点音乐按钮）', fresh.on === true && after > 0.005,
+    `交互后 --beat 峰值 ${after.toFixed(3)}（若为 0 且环境有音频设备，说明播放链路仍是静音的）`);
+  ok('播放起来后底部光晕随之亮起', after > 0.005 && afterGlow > 0.552, `opacity=${afterGlow}（静态底色 0.55）`);
+  const stillOn = await musicState();
+  ok('自动播放不改写按钮状态（仍是开启）', stillOn.on === true && stillOn.pressed === 'true');
+  await shot('06-autoplay-after-gesture.png');
+
   console.log('\n【截图】');
   console.log(`  ${SHOT_DIR}`);
 } catch (e) {

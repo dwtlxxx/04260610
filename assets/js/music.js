@@ -1,4 +1,4 @@
-﻿/**
+/**
  * music.js —— 全局背景音乐的"音频引擎"（不含任何绘制）
  *
  * 职责边界：只负责加载、播放/暂停、用 Web Audio 取出频谱，并把用户选择持久化。
@@ -82,7 +82,10 @@ export function initMusic(src) {
   const unlock = () => {
     window.removeEventListener('pointerdown', unlock);
     window.removeEventListener('keydown', unlock);
-    if (on && audio.paused) tryStart();
+    /* 这里不再用 audio.paused 判断要不要重试：
+       被策略拦下时元素可能已经在"播放"（只是 AudioContext 还 suspended），
+       此时仍必须再走一次 tryStart 去 resume，否则永远是静音。 */
+    if (on) tryStart();
   };
   try {
     window.addEventListener('pointerdown', unlock, { once: true });
@@ -99,6 +102,18 @@ function tryStart() {
     if (p && p.catch) p.catch(() => { /* 被策略拦下，等用户手势 */ });
   } catch { /* 播放失败不影响其他功能 */ }
   wire();
+  /* ⚠ 关键（"进入页面不主动播放音乐"的根因）：
+     音频被接进 Web Audio 图（createMediaElementSource → analyser → destination）之后，
+     真正决定"有没有声音"的是 AudioContext 的状态，而不是 audio.paused。
+     进页面时（还没有任何用户手势）创建出来的 AudioContext 处于 suspended，
+     此后 play() 就算成功、currentTime 一直在走，整条链路依然全程静音 ——
+     而 resume() 此前只写在 toggleMusic() 里，所以表现是"点哪都不响，
+     只有手动关一次再开一次音乐才响"。
+     这里每次尝试播放都顺手 resume 一次：没有手势时会被浏览器拒绝（无害），
+     首次手势后再走这条路径就能真正出声。 */
+  if (ctx && ctx.state === 'suspended') {
+    try { ctx.resume().catch(() => { /* 没有用户手势时会被拒绝，等下一次 */ }); } catch { /* 忽略 */ }
+  }
 }
 
 function wire() {
