@@ -250,6 +250,64 @@ try {
   ok('图标列被钉死（flex: none），宽度变化只由文字吸收', !!rail && rail.iconFlex.startsWith('0'), rail && rail.iconFlex);
   ok('图标靠左对齐（justify-content: flex-start）', !!rail && rail.linkJustify === 'flex-start', rail && rail.linkJustify);
 
+  /* 背景音乐与光晕的联动是"行为"，本地 DOM 桩完全测不到（没有 WebAudio、没有音频解码）。
+     产品契约（见 music.js）：默认开启、被自动播放策略拦下就等第一次用户手势；
+     关过之后记住选择。所以"初始一定是关"不是契约，断言写成"点一下必须翻转"。
+     无头浏览器没有音频输出设备，"能不能听见"没法断言，但可以量到
+     --beat 是否出现非零电平 —— 那说明音频真的在解码、AnalyserNode 真的在出数、
+     decor.js 真的把它写进了 :root（这一条以前从未验证过）。 */
+  console.log('\n【⑤ 背景音乐：按钮行为 + 与光晕联动】');
+  const musicState = () => ev(`
+    const b = document.querySelector('[data-action="toggle-music"]');
+    const g = document.querySelector('.beat-glow');
+    return { on: b.classList.contains('is-on'), pressed: b.getAttribute('aria-pressed'),
+      label: b.getAttribute('aria-label'), title: b.getAttribute('title'),
+      beat: Number(document.documentElement.style.getPropertyValue('--beat') || 0),
+      glowOpacity: g ? Number(getComputedStyle(g).opacity) : -1,
+      x: Math.round(b.getBoundingClientRect().left + b.getBoundingClientRect().width / 2),
+      y: Math.round(b.getBoundingClientRect().top + b.getBoundingClientRect().height / 2) };`);
+  const clickMusic = async (s) => {
+    for (const type of ['mousePressed', 'mouseReleased']) {
+      await cdp.send('Input.dispatchMouseEvent', { type, x: s.x, y: s.y, button: 'left', clickCount: 1 });
+    }
+  };
+
+  const start = await musicState();
+  ok('音乐按钮带可访问名与按下状态（title / aria-label / aria-pressed 都不为空）',
+    !!start.title && !!start.label && (start.pressed === 'true' || start.pressed === 'false'),
+    `${start.label} · aria-pressed=${start.pressed}`);
+  ok('初始状态与持久化偏好一致（默认开启，关过则记住关闭）',
+    start.on === (start.pressed === 'true'), `is-on=${start.on}`);
+
+  // 先确保处于"开启"，再验证播放；真实点击（用户手势）才会被播放策略放行
+  if (!start.on) { await clickMusic(start); await sleep(900); }
+  const on = await musicState();
+  ok('开启态：按钮高亮与 aria-pressed 同步', on.on === true && on.pressed === 'true',
+    `is-on=${on.on} aria-pressed=${on.pressed} 名称="${on.label}"`);
+  let peak = 0; let peakGlow = 0;
+  for (let i = 0; i < 12; i++) {
+    const s = await musicState();
+    if (s.beat > peak) { peak = s.beat; peakGlow = s.glowOpacity; }
+    await sleep(160);
+  }
+  if (peak > 0.005) {
+    ok('开启态：音频真的在跑（--beat 出现非零电平 = 频谱有数据）', true, `峰值 ${peak.toFixed(3)}`);
+    ok('开启态：底部光晕亮度跟着电平抬起来（--beat 真的驱动了 CSS）',
+      peakGlow > 0.552, `opacity=${peakGlow}（静态底色 0.55）`);
+  } else {
+    console.log(`  ⚠ 参考项跳过：本次 --beat 峰值 ${peak.toFixed(3)}（无头环境缺少音频输出设备时属正常，请在有声卡的浏览器里看光晕是否随音乐呼吸）`);
+  }
+  await shot('05-music-on.png');
+
+  await clickMusic(on);
+  await sleep(900);
+  const off = await musicState();
+  ok('再次点击可关闭（状态与可访问名同步回"关"）',
+    off.on === false && off.pressed === 'false' && /开启/.test(off.label),
+    `is-on=${off.on} aria-pressed=${off.pressed} 名称="${off.label}"`);
+  ok('关闭后 --beat 收敛回 0（光晕退回静态底色，不会僵在亮的位置）', off.beat <= 0.02, `--beat=${off.beat}`);
+  ok('关闭后光晕回到基准亮度', Math.abs(off.glowOpacity - 0.55) < 0.02, `opacity=${off.glowOpacity}`);
+
   console.log('\n【截图】');
   console.log(`  ${SHOT_DIR}`);
 } catch (e) {

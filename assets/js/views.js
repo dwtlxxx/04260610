@@ -1,4 +1,4 @@
-﻿/**
+/**
  * views.js —— 双端视图层
  *
  * 同一批数据（来自 logic.js 的派生结果），两种结构：
@@ -76,9 +76,9 @@ function topbar(state, dataset) {
 
       <div class="tb-actions">
         <button class="icon-btn music-toggle ${state.musicOn ? 'is-on' : ''}" data-action="toggle-music"
-                title=""
-                aria-pressed=""
-                aria-label="">${state.musicOn ? ICON.note : ICON.noteOff}</button>        <button class="icon-btn" data-action="toggle-theme"
+                title="${state.musicOn ? '背景音乐：开（点击关闭）' : '背景音乐：关（点击开启）'}"
+                aria-pressed="${state.musicOn ? 'true' : 'false'}"
+                aria-label="${state.musicOn ? '关闭背景音乐' : '开启背景音乐'}">${state.musicOn ? ICON.note : ICON.noteOff}</button>        <button class="icon-btn" data-action="toggle-theme"
                 title="主题：${esc(themeModeLabel)}（点击切换）" aria-label="切换主题，当前${esc(themeModeLabel)}">
           ${ICON.theme}<span class="mode-label">${esc(themeModeLabel)}</span>
         </button>
